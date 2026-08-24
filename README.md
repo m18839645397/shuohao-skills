@@ -27,6 +27,111 @@
 
 **五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
 
+## 推荐完整流程
+
+这套仓库不是一条 `node` 命令自动写完整部剧，而是让 agent 按五个 skill 分阶段创作、脚本逐阶段校验。推荐依赖顺序：
+
+```text
+小说原文
+  → novel-outline
+  → novel-characters
+  → novel-art
+  → novel-script
+  → novel-storyboard
+  → 分镜投产包 + 合并报告
+```
+
+Codex 用 `$novel-*` 显式调用；Claude Code 用 `/novel-*`。下面以 Codex 为例，路径换成自己的即可。
+
+### 1. 先定改编大纲
+
+大纲是角色、场景、剧本的共同上游。开始时一次给齐**总集数 × 单集时长、题材、改编幅度、必须保留的角色或情节**：
+
+```text
+$novel-outline
+
+把 D:\novels\原著.txt 改编成 60 集、每集 2 分钟的都市逆袭短剧。
+改编幅度用“抽核”，保留主角和原著核心反转。
+输出到 D:\novels\demo\outline。
+```
+
+这一段会先交付快版骨架，拍板砍线、合人和爽点位置后才写分集梗概。产出 `<剧名>-outline.json` / `.md` / `outline-report.html`。
+
+### 2. 做角色设定
+
+把原文与 `outline.json` 一起交给角色 skill；完整管线中不要重新判断角色重要性，沿用大纲分档：
+
+```text
+$novel-characters
+
+使用原文 D:\novels\原著.txt 和
+D:\novels\demo\outline\<剧名>-outline.json 生成角色设定集。
+画风使用 cinematic，先给主要角色出设定图，输出到
+D:\novels\demo\characters。
+```
+
+可用画风：`realistic`（半写实厚涂）、`cinematic`（电影级真人写实）、`ghibli`（手绘动画）、`inkwash`（国风水墨）。角色多时先做主角组，确认脸和画风再继续。产出 `cast.json`、报告和可选角色设定图。
+
+### 3. 做场景与叙事道具
+
+角色和美术必须使用同一个 `style`。把 `outline.json` 与 `cast.json` 一起交给美术 skill：
+
+```text
+$novel-art
+
+基于 outline.json 与 cast.json 生成场景和叙事道具设定，
+保持 cinematic 画风，输出到 D:\novels\demo\art。
+```
+
+产出 `art.json`、场景/道具提示词、报告和可选设定图。这里只建跨集一致性资产；一次性手部物件留到分镜提示词处理。
+
+### 4. 小批量写剧本
+
+剧本消费大纲、角色和美术资产。一次建议写 **1–3 集**，通过时长和对账门后再继续：
+
+```text
+$novel-script
+
+使用 outline.json、cast.json、art.json，先写第 1–3 集，
+每集目标 120 秒，输出到 D:\novels\demo\script。
+```
+
+产出 `script.json`、分集剧本、时长报告和按角色聚合的台词本。发现人物、场景或道具不够时回上游补资产，不要在剧本里偷偷造一套新设定。
+
+### 5. 出分镜与 H3 提示词
+
+分镜消费前四段 JSON。先做第一集，并只生成第一段的整套分镜图确认方向：
+
+```text
+$novel-storyboard
+
+使用 outline.json、cast.json、art.json、script.json 制作第 1 集分镜。
+先生成第一段的全部分镜图供我确认，再继续整集；
+输出到 D:\novels\demo\storyboard。
+```
+
+新 seed 默认启用 `cameraPlanMode: "cinematic-controlled"`。每切会明确起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场；固定镜头默认，动态镜头一切只用一个主运镜。确认第一段后再扩到整集，避免一集 30–40 张图整批返工。
+
+完成后导出 H3 投产包：
+
+```bash
+cd D:/novels/demo/storyboard
+node <项目目录>/skills/novel-storyboard/scripts/novel-storyboard.mjs export \
+  ./<剧名>-storyboard.json --script ../script/<剧名>-script.json --out .
+```
+
+每个 `E01-01/` 段目录就是一次视频生成所需的 `prompt.md` + `f1..fN.png`；不要把这些段目录再套进 `segments/`，否则报告的相对图片路径会失效。
+
+### 6. 合并评审报告
+
+任意阶段完成后都可以组装单页；有哪几份 JSON 就显示哪几个面板：
+
+```bash
+node scripts/report.mjs --from D:/novels/demo --out D:/novels/demo/report.html
+```
+
+建议始终遵守四条：**先大纲拍板再细化、角色与美术同画风、剧本和分镜小批量推进、每阶段必须通过 validate 再交给下游**。
+
 ## 合成一张单页
 
 五段的报告可以合成一张单页，左侧导航切换——**有哪几段就出哪几个面板**：
@@ -135,7 +240,7 @@ for f in skills/*/scripts/selftest.mjs; do node "$f"; done
 
 ## 端到端 demo 工作目录约定
 
-把一本小说从头跑完五段（角色 → 大纲 → 美术 → 剧本 → 分镜），会产出大量 `*.json` / `*.md` / `*-report.html`。**不要平铺在根目录**，按五个 skill 各建一个目录归档，一眼对应流水线五段：
+把一本小说从头跑完五段（大纲 → 角色 → 美术 → 剧本 → 分镜），会产出大量 `*.json` / `*.md` / `*-report.html`。**不要平铺在根目录**，按五个 skill 各建一个目录归档，一眼对应流水线五段：
 
 ```
 <demo>/

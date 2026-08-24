@@ -15,7 +15,7 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 （单分镜的段改用官方 I2VA 固定句：For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.）
 
 integrated_multimodal_description:
-[Shot 1] Cinematic, live-action, cold gray-green palette. 按 <Picture 1> 的构图锚定人物与状态，再写这几秒发生什么、镜头怎么动、谁说了什么（全英文）。
+[Shot 1] Cinematic, live-action, cold gray-green palette. 按 <Picture 1> 的构图锚定人物与状态，再按 cameraPlan 写转场、起始机位、动作、速度/幅度、主运镜与目标、焦点、结束构图、导演意图，最后写台词（全英文）。
 [Shot 2] At 00:03.000, the camera cuts to <Picture 2>: ……（**每个镜头独立一行**，切点时刻开头，等于前面分镜秒数的累计）
 
 overall_soundscape: 1–4 句英文：环境声、动作声、非语言人声。不复述台词。
@@ -29,8 +29,11 @@ non_diegetic_music: 1–3 句英文写配器与速度（角色听不见、只有
 
 ## 运镜
 
-- 词表 20 种（schema.md 的 camera 枚举），可加幅度（小幅/大幅）与速度（缓/快），写成自然动作句：「镜头小幅缓推向掐白的指节」
-- **每个分镜的运镜词必须落在自己那一行里**：英文用官方词（static shot / push in / tracking shot……），中文模式用词表的中文词（固定/推/拉/跟拍……）——门按 `promptLang` 检查
+- 先读 `camera-direction.md`。新 seed 默认 `cameraPlanMode: "cinematic-controlled"`，每切都填 `cameraPlan` 与 `transition`。
+- 词表 20 种（schema.md 的 camera 枚举）。**一切只用一个主运镜**，固定镜头默认；不要用否定句罗列其他运镜词。
+- 每个分镜的运镜词必须落在自己那一行里：英文用官方词（static shot / push in / tracking shot……），中文模式用词表中文词（固定/推/拉/跟拍……）。
+- 动态运镜的速度、幅度、转场 token，以及 `start` / `target` / `end` / `focus` / `intent` 五个 prompt-ready 原句必须逐字进入自己的 `[Shot k]`；质量门会对账。
+- `Static Shot` 必须用 `pace=static`、`magnitude=none`；POV 可以固定或移动，但固定时这两个值必须成对出现；其他运镜必须给非静态速度与非零幅度。
 
 ## 说话人与台词
 

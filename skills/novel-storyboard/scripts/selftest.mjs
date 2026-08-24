@@ -8,10 +8,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  CAMERA_PLAN_MAGNITUDES,
+  CAMERA_PLAN_MODE,
+  CAMERA_PLAN_PACES,
   CAMERA_MOVES,
   DEFAULT_PARAMS,
   DEFAULT_STYLE,
   STYLE_PRESETS,
+  TRANSITION_TOKENS,
   exportPack,
   H3_I2VA_LINE,
   SHOT_SIZES,
@@ -57,6 +61,39 @@ function eq(actual, expected, label) {
 }
 const clone = (x) => structuredClone(x);
 const gate = (doc, id, ctx = CTX) => gateReport(doc, ctx).find((g) => g.id === id);
+
+const cameraPlanDoc = () => {
+  const plan = {
+    pace: 'slow',
+    magnitude: 'subtle',
+    start: 'waist-high rear medium shot two metres behind the subject',
+    target: 'the woman and the suitcase held against her chest',
+    end: 'her silhouette entering the dense fog',
+    focus: 'keep the subject sharp while the background falls out of focus',
+    intent: 'create urgency while withholding the destination',
+  };
+  return {
+    source: '运镜测试',
+    cameraPlanMode: CAMERA_PLAN_MODE,
+    promptLang: 'en',
+    style: 'realistic',
+    episodes: [{
+      ep: 1,
+      segments: [{
+        id: 'E01-01',
+        sceneIndex: 1,
+        cuts: [{
+          beats: [1, 1], seconds: 3, size: 'medium', camera: 'Tracking Shot',
+          cameraPlan: plan, transition: 'straight-cut', characters: [], props: [],
+          frame: 'medium shot of a woman running through fog, cinematic film still, 16:9',
+        }],
+        h3Prompt: `${H3_I2VA_LINE}\n\nintegrated_multimodal_description:\n` +
+          `[Shot 1] A straight cut enters <Picture 1>. ${plan.start}. Use a slow, subtle Tracking Shot centred on ${plan.target}. ${plan.focus}. End with ${plan.end}. The intent is to ${plan.intent}.\n\n` +
+          'overall_soundscape: Footsteps splash through wet mud.\n\nnon_diegetic_music: N/A.',
+      }],
+    }],
+  };
+};
 
 /* ---------------- expandScript ---------------- */
 
@@ -240,6 +277,53 @@ eq(gateReport(FIXTURE, CTX).length, 17, '十七道门');
   const g = gate(doc, 'camera-phrase');
   ok(!g.ok, '运镜词没写进自己的 [Shot k] 段落被拦');
   ok(g.detail.includes('E01-01#1'), '点名到切');
+}
+{
+  const doc = cameraPlanDoc();
+  ok(gate(doc, 'camera-phrase', {}).ok, '电影化运镜执行计划完整时通过');
+  ok(CAMERA_PLAN_PACES.includes('slow') && CAMERA_PLAN_MAGNITUDES.includes('subtle'), '速度与幅度枚举可用');
+  ok(TRANSITION_TOKENS['cut-on-action'].en === 'cut-on-action', '转场枚举带英文提示词 token');
+}
+{
+  const doc = cameraPlanDoc();
+  delete doc.episodes[0].segments[0].cuts[0].cameraPlan.target;
+  ok(!gate(doc, 'camera-phrase', {}).ok, '运镜执行计划缺目标被拦');
+}
+{
+  const doc = cameraPlanDoc();
+  doc.episodes[0].segments[0].cuts[0].cameraPlan.pace = 'static';
+  ok(!gate(doc, 'camera-phrase', {}).ok, '动态运镜使用 static 速度被拦');
+}
+{
+  const doc = cameraPlanDoc();
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  cut.camera = 'Static Shot';
+  cut.cameraPlan.pace = 'static';
+  cut.cameraPlan.magnitude = 'none';
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace('Use a slow, subtle Tracking Shot', 'Use a Static Shot');
+  ok(gate(doc, 'camera-phrase', {}).ok, '固定镜头使用 static/none 时通过');
+}
+{
+  const doc = cameraPlanDoc();
+  doc.episodes[0].segments[0].cuts[0].camera = 'POV';
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace('Tracking Shot', 'POV');
+  ok(gate(doc, 'camera-phrase', {}).ok, '移动 POV 可以使用动态速度与幅度');
+}
+{
+  const doc = cameraPlanDoc();
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace(cut.cameraPlan.end, 'the shot ends in fog');
+  ok(!gate(doc, 'camera-phrase', {}).ok, '结束构图没有逐字进入对应 Shot 被拦');
+}
+{
+  const doc = cameraPlanDoc();
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace('Use a slow', 'Use a Push In and a slow');
+  ok(!gate(doc, 'camera-phrase', {}).ok, '同一切出现冲突主运镜被拦');
+}
+{
+  const doc = cameraPlanDoc();
+  doc.episodes[0].segments[0].cuts[0].transition = 'whip-pan';
+  ok(!gate(doc, 'camera-phrase', {}).ok, '转场不在允许列表被拦');
 }
 // h3-structure — 对齐指令由分镜结构推导，逐字对账
 {
@@ -593,6 +677,7 @@ ok(validateStoryboard({ source: 'x', episodes: [] }).some((p) => p.includes('epi
 
 const seeded = seedFromScript(SCRIPT);
 eq(seeded.source, '渡口', 'seed 带剧名');
+eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
 eq(seeded.episodes.length, 6, 'seed 全六集');
 eq(seeded.episodes[0].segments.length, 0, 'segments 留空给模型切');
 eq(seeded.episodes[0].seedScenes.length, 2, '工作底稿带两场');
@@ -620,6 +705,7 @@ ok(md.includes('[Shot 2] At 00:03.000,'), '切点时刻原样进 md');
 ok(md.includes('老周'), 'md 说话人显示名字');
 ok(md.includes('生成批次单') && md.includes('配音对齐单'), 'md 带两张工单');
 ok(renderMarkdown(FIXTURE, { script: SCRIPT }).includes('C03'), '不给 outline 退回裸 ID');
+ok(renderMarkdown(cameraPlanDoc(), {}).includes('运镜执行: slow / subtle'), 'md 展示结构化运镜执行计划');
 
 /* ---------------- render html ---------------- */
 
@@ -656,6 +742,11 @@ ok(html.includes('渡口-storyboard.json'), '导出文件名');
 ok(html.includes('批次 01'), '批次卡编号');
 ok(html.includes('@media print'), '打印样式');
 ok(html.includes('老周'), 'html 里 ID 换成名字');
+{
+  const cameraHtml = renderHtml(cameraPlanDoc(), {});
+  ok(cameraHtml.includes('class="cplan"'), 'html 展示运镜执行计划块');
+  ok(cameraHtml.includes('waist-high rear medium shot'), 'html 运镜执行计划包含起始机位');
+}
 {
   const withImg = renderHtml(FIXTURE, { ...CTX, imageExists: () => true });
   ok(withImg.includes('"E01-01/f1.png"'), '主分镜图从段文件夹读');

@@ -68,6 +68,28 @@ export const CAMERA_MOVES = {
   'Roll Counterclockwise': '逆旋',
 };
 
+/** 克制电影感运镜执行计划：新 seed 默认开启，旧 JSON 未声明时保持兼容。 */
+export const CAMERA_PLAN_MODE = 'cinematic-controlled';
+export const CAMERA_PLAN_PACES = ['static', 'slow', 'steady', 'fast'];
+export const CAMERA_PLAN_MAGNITUDES = ['none', 'subtle', 'moderate', 'large'];
+export const CAMERA_PLAN_FIELDS = ['start', 'target', 'end', 'focus', 'intent'];
+export const TRANSITION_TOKENS = {
+  'straight-cut': { en: 'straight cut', zh: '直接切入' },
+  'cut-on-action': { en: 'cut-on-action', zh: '动作中切入' },
+  'reaction-cut': { en: 'reaction cut', zh: '反应切入' },
+  'match-cut': { en: 'match cut', zh: '匹配剪辑切入' },
+  'reveal-cut': { en: 'reveal cut', zh: '揭示切入' },
+};
+const CAMERA_PACE_TOKENS = {
+  en: { slow: 'slow', steady: 'steady', fast: 'fast' },
+  zh: { slow: '缓慢', steady: '平稳', fast: '快速' },
+};
+const CAMERA_MAGNITUDE_TOKENS = {
+  en: { subtle: 'subtle', moderate: 'moderate', large: 'large' },
+  zh: { subtle: '轻微', moderate: '中等', large: '大幅' },
+};
+const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
+
 /** 分镜图风格预设：与 novel-characters / novel-art 同名对齐（realistic / cinematic / ghibli / inkwash）。
  *  短语必须出现在每条分镜图提示词里——同一部剧的分镜图不许画风漂。 */
 export const STYLE_PRESETS = {
@@ -428,7 +450,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -438,6 +460,10 @@ export function gateReport(board, ctx = {}) {
   if (!style) bad.style.push(`style「${styleId}」不在预设里（${Object.keys(STYLE_PRESETS).join(' / ')}）`);
   // 提示词语言：默认英文——官方规范的口径（台词仍在 <d> 里保留原文）；'zh' 可切整条中文
   const promptLang = board?.promptLang ?? 'en';
+  const cameraPlanRequired = board?.cameraPlanMode === CAMERA_PLAN_MODE;
+  if (board?.cameraPlanMode && !cameraPlanRequired) {
+    bad.cameraPlan.push(`cameraPlanMode「${board.cameraPlanMode}」不支持，应为「${CAMERA_PLAN_MODE}」`);
+  }
 
   // 提示词禁人名：outline 的名字 + cast 的名字与别名
   const banned = [];
@@ -529,6 +555,77 @@ export function gateReport(board, ctx = {}) {
             bad.camera.push(`${cid} 在 h3Prompt 里找不到对应的 [Shot ${ci + 1}] 段落`);
           } else if (!(promptLang === 'en' ? slice.toLowerCase() : slice).includes(term)) {
             bad.camera.push(`${cid} 的 [Shot ${ci + 1}] 段落缺运镜词「${term}」`);
+          }
+        }
+
+        // 运镜执行计划：新 seed 开启。字段是 prompt-ready 片段，必须逐字落进自己的 [Shot k]。
+        if (cameraPlanRequired) {
+          const plan = cut?.cameraPlan;
+          const slice = slices[ci];
+          let stationary = cut?.camera === 'Static Shot';
+          let ready = plan && typeof plan === 'object' && !Array.isArray(plan);
+          if (!ready) {
+            bad.cameraPlan.push(`${cid} 缺 cameraPlan`);
+          } else {
+            if (!CAMERA_PLAN_PACES.includes(plan.pace)) {
+              bad.cameraPlan.push(`${cid} 的 cameraPlan.pace「${plan.pace}」不合法`);
+              ready = false;
+            }
+            if (!CAMERA_PLAN_MAGNITUDES.includes(plan.magnitude)) {
+              bad.cameraPlan.push(`${cid} 的 cameraPlan.magnitude「${plan.magnitude}」不合法`);
+              ready = false;
+            }
+            for (const field of CAMERA_PLAN_FIELDS) {
+              if (!hasText(plan[field])) {
+                bad.cameraPlan.push(`${cid} 的 cameraPlan.${field} 为空`);
+                ready = false;
+              }
+            }
+            if (cut?.camera === 'Static Shot' && (plan.pace !== 'static' || plan.magnitude !== 'none')) {
+              bad.cameraPlan.push(`${cid} 的 ${cut.camera} 必须 pace=static、magnitude=none`);
+            }
+            if (cut?.camera === 'POV') {
+              const paceStatic = plan.pace === 'static';
+              const magnitudeNone = plan.magnitude === 'none';
+              if (paceStatic !== magnitudeNone) bad.cameraPlan.push(`${cid} 的 POV 若固定，必须同时 pace=static、magnitude=none`);
+              stationary = paceStatic && magnitudeNone;
+            } else if (cut?.camera !== 'Static Shot' && (plan.pace === 'static' || plan.magnitude === 'none')) {
+              bad.cameraPlan.push(`${cid} 的动态运镜必须给非 static 的速度和非 none 的幅度`);
+            }
+          }
+
+          const transition = TRANSITION_TOKENS[cut?.transition];
+          if (!transition) bad.cameraPlan.push(`${cid} 的 transition「${cut?.transition}」不在允许列表里`);
+
+          if (ready && slice != null) {
+            const haystack = promptLang === 'en' ? slice.toLowerCase() : slice;
+            for (const field of CAMERA_PLAN_FIELDS) {
+              const value = String(plan[field]).trim();
+              const needle = promptLang === 'en' ? value.toLowerCase() : value;
+              if (!haystack.includes(needle)) {
+                bad.cameraPlan.push(`${cid} 的 [Shot ${ci + 1}] 缺 cameraPlan.${field} 原文「${value}」`);
+              }
+            }
+            if (!stationary) {
+              const lang = promptLang === 'en' ? 'en' : 'zh';
+              const paceToken = CAMERA_PACE_TOKENS[lang][plan.pace];
+              const magnitudeToken = CAMERA_MAGNITUDE_TOKENS[lang][plan.magnitude];
+              if (!paceToken || !haystack.includes(paceToken)) bad.cameraPlan.push(`${cid} 的提示词缺速度词「${paceToken ?? plan.pace}」`);
+              if (!magnitudeToken || !haystack.includes(magnitudeToken)) bad.cameraPlan.push(`${cid} 的提示词缺幅度词「${magnitudeToken ?? plan.magnitude}」`);
+            }
+            if (transition) {
+              const token = transition[promptLang === 'en' ? 'en' : 'zh'];
+              const needle = promptLang === 'en' ? token.toLowerCase() : token;
+              if (!haystack.includes(needle)) bad.cameraPlan.push(`${cid} 的提示词缺转场词「${token}」`);
+            }
+            // 英文模式能可靠逐词检查冲突；中文单字词（推/拉/升/降）误报率太高，不做猜测。
+            if (promptLang === 'en' && CAMERA_MOVES[cut?.camera]) {
+              for (const move of Object.keys(CAMERA_MOVES)) {
+                if (move !== cut.camera && haystack.includes(move.toLowerCase())) {
+                  bad.cameraPlan.push(`${cid} 同时出现主运镜「${cut.camera}」和冲突运镜「${move}」`);
+                }
+              }
+            }
           }
         }
         const frame = String(cut?.frame ?? '');
@@ -658,7 +755,13 @@ export function gateReport(board, ctx = {}) {
   add('crowd', `单个分镜同框 ≤ ${params.maxOnScreen} 人，超了必须带拆解说明`, bad.crowd.length === 0, bad.crowd.join('；'));
   add('segment-id', '段号 E01-01 格式、按顺序连号', bad.id.length === 0, bad.id.join('；'));
   add('size-phrase', '景别短语写进分镜图提示词', bad.size.length === 0, bad.size.join('；'));
-  add('camera-phrase', '运镜用 H3 官方词表，且出现在自己的 [Shot k] 段落里', bad.camera.length === 0, bad.camera.join('；'));
+  const cameraProblems = [...bad.camera, ...bad.cameraPlan];
+  add(
+    'camera-phrase',
+    '运镜用 H3 官方词表；启用电影化模式时，执行计划与转场完整且逐字进入自己的 [Shot k]',
+    cameraProblems.length === 0,
+    cameraProblems.length ? cameraProblems.join('；') : cameraPlanRequired ? '' : `未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`,
+  );
   add('h3-structure', 'H3 首行对齐指令由分镜结构推导逐字对账，切点时刻逐个对', eps.length > 0 && bad.h3s.length === 0, bad.h3s.join('；'));
   add('h3-dialogue', '认领节拍的台词逐字进 H3 提示词的 <d> 块', bad.h3d.length === 0, script ? bad.h3d.join('；') : SKIP_SCRIPT);
   add('h3-lang', `H3 提示词语言与设定一致（promptLang=${promptLang}，正文${promptLang === 'en' ? '全英文' : '中文'}、骨架 token 官方英文格式）`, bad.h3e.length === 0, bad.h3e.join('；'));
@@ -756,7 +859,7 @@ export function seedFromScript(script, epRange = null) {
       })),
     });
   }
-  return { source: script?.source ?? '', episodes };
+  return { source: script?.source ?? '', cameraPlanMode: CAMERA_PLAN_MODE, episodes };
 }
 
 /* ------------------------------------------------------------------ */
@@ -835,7 +938,7 @@ const GATE_LABELS_EN = {
   'crowd': 'At most {0} characters on screen per cut; more requires a breakdown note',
   'segment-id': 'Segment IDs in E01-01 format, sequential',
   'size-phrase': 'Shot-size phrase present in the frame prompt',
-  'camera-phrase': 'Camera move from the official H3 vocabulary, inside its own [Shot k] passage',
+  'camera-phrase': 'Official H3 camera move; in cinematic mode, the complete camera plan and transition appear inside their own [Shot k]',
   'h3-structure': 'H3 alignment line derived from the cut structure, audited verbatim; cut times match',
   'h3-dialogue': 'Claimed dialogue appears verbatim inside the H3 <d> blocks',
   'h3-lang': 'Prompt language matches the promptLang setting',
@@ -853,6 +956,7 @@ const GATE_SKIPS_EN = {
     '未提供 cast.json，本门跳过（视为通过）': 'cast.json not provided — gate skipped (treated as passing)',
     '未挂载配方卡库（--shots <卡片目录>），本门跳过（视为通过）': 'no recipe card library mounted (--shots <cards dir>) — gate skipped (treated as passing)',
     '本批分镜没有引用配方': 'no cut in this batch references a recipe',
+    [`未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`]: `cameraPlanMode=${CAMERA_PLAN_MODE} not enabled — execution-plan checks skipped`,
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {
@@ -914,6 +1018,9 @@ const I18N = {
     listSep: '、',
     sizeName: (size) => SHOT_SIZES[size]?.zh ?? size,
     cameraLabel: (camera) => `${camera}（${CAMERA_MOVES[camera] ?? '?'}）`,
+    cameraPlan: '运镜执行',
+    transition: '转场',
+    transitionName: (id) => TRANSITION_TOKENS[id]?.zh ?? id,
     recipeNone: '—',
     recipeName: (card, id) => card?.name ?? id,
     recipeDrift: (sizes, cameras) =>
@@ -975,6 +1082,9 @@ const I18N = {
     listSep: ', ',
     sizeName: (size) => SHOT_SIZES[size]?.phrase ?? size,
     cameraLabel: (camera) => camera,
+    cameraPlan: 'Camera plan',
+    transition: 'Transition',
+    transitionName: (id) => TRANSITION_TOKENS[id]?.en ?? id,
     recipeNone: '—',
     recipeName: (card, id) => card?.name_en ?? card?.name ?? id,
     recipeDrift: (sizes, cameras) =>
@@ -992,6 +1102,12 @@ const I18N = {
 const tOf = (lang) => {
   if (lang && !I18N[lang]) throw new Error('报告界面语言目前内置 zh / en');
   return I18N[lang ?? 'zh'];
+};
+
+const cameraPlanSummary = (cut, t) => {
+  const plan = cut?.cameraPlan;
+  if (!plan || typeof plan !== 'object') return '';
+  return `${t.cameraPlan}: ${plan.pace ?? '?'} / ${plan.magnitude ?? '?'} · ${plan.start ?? '?'} → ${plan.target ?? '?'} → ${plan.end ?? '?'} · ${plan.focus ?? '?'} · ${plan.intent ?? '?'} · ${t.transition}: ${t.transitionName(cut.transition)}`;
 };
 
 /* ------------------------------------------------------------------ */
@@ -1068,11 +1184,12 @@ export function renderMarkdown(board, ctx = {}) {
           .join(' ');
         // md 没有 title 属性，偏离的建议值直接写在格子里
         const rc = cutRecipe(cut, ctx.recipes, t);
+        const cameraPlan = cameraPlanSummary(cut, t);
         out.push(mdRow([
           `#${ci + 1}`, `${starts[ci].toFixed(2)}s`, cut.seconds,
           t.sizeName(cut.size), t.cameraLabel(cut.camera),
           rc ? `${rc.name}${rc.drift ? ` ≠（${rc.drift}）` : ''}` : t.recipeNone,
-          summary, (cut.characters ?? []).map(n.char).join(t.listSep),
+          `${summary}${cameraPlan ? `<br>**${cameraPlan}**` : ''}`, (cut.characters ?? []).map(n.char).join(t.listSep),
         ]));
       });
       out.push('', `**${t.h3Section}**`, '', '```text', seg.h3Prompt ?? '', '```', '');
@@ -1190,6 +1307,7 @@ export function renderHtml(board, ctx = {}) {
                 .join('');
               // 「配方」列：偏离建议景别／运镜的加 ≠ 上标，建议值写进 title——提示而已，不是门
               const rc = cutRecipe(cut, ctx.recipes, t);
+              const cameraPlan = cameraPlanSummary(cut, t);
               return `<li class="cut">
   <div class="cut-h">
     <b>#${ci + 1}</b>
@@ -1201,6 +1319,7 @@ export function renderHtml(board, ctx = {}) {
     <button class="copy mini" data-copy="${esc(cut.frame ?? '')}">${esc(t.framePrompt)}</button>
   </div>
   ${summary}
+  ${cameraPlan ? `<p class="cplan"><b>${esc(t.cameraPlan)}</b>${esc(cameraPlan.replace(`${t.cameraPlan}: `, ''))}</p>` : ''}
 </li>`;
             })
             .join('\n');
@@ -1398,6 +1517,8 @@ section.top-sec{margin-top:34px}
 .cut-h b{font:500 12px/1 var(--mono);color:var(--seal)}
 .cut-t{font:500 10.5px/1.6 var(--mono);color:var(--ink-3)}
 .cut-sc{font-size:11.5px;color:var(--ink-2)}
+.cplan{margin:6px 0 0;padding:7px 9px;border-left:2px solid var(--rule-2);background:var(--paper);font:400 10.5px/1.55 var(--mono);color:var(--ink-2)}
+.cplan b{margin-right:7px;color:var(--ink);font-family:var(--sans)}
 .cut-rc{font:400 10.5px/1.6 var(--mono);border:1px dashed var(--rule-2);border-radius:2px;padding:0 6px;color:var(--ink-2)}
 .cut-rc sup{color:var(--seal-2);font-weight:700;cursor:help;margin-left:2px}
 .cut-h .copy{margin-left:auto;opacity:0;transition:.15s}

@@ -15,6 +15,7 @@ segment = one video-generation call, ≤ 15s, never crosses scenes
 - **A dialogue's shot–reverse-shot lives inside one segment, one generation** — wide, close on A, close on B are separate 2–5s cuts, each composition controlled by its own storyboard frame instead of gambling on prose
 - **The alignment instruction is derived, not written** — the multi-picture line (`Picture 2 aligns with the 3.00-second mark…`) and every `[Shot k] At 00:0X.XXX` cut time are computed from cut durations, and validate audits them **character for character**: change a duration without updating the prompt and it blocks
 - **Prompts follow the official spec: English by default, one shot per line** — each shot on its own line with its cut time; dialogue, lyrics and on-screen text keep their original language per the official rules (`<d>[Chinese] …</d>` verbatim). `promptLang: 'zh'` switches the whole prompt to Chinese. The writing spec is internalized as `references/h3-prompt.md` — **this skill is self-contained and depends on no external skill**
+- **Every cut carries an executable camera plan** — new seeds enable `cameraPlanMode: "cinematic-controlled"`: start position, pace/magnitude, target, focus, end composition, intent and transition are copied into that cut's own `[Shot k]`; static is the default and each cut gets one primary move
 - **Frames are asset composition, not invention** — generation feeds the scene / character / prop sheets as references; with codex installed the frames are actually generated (optional)
 
 Outputs `storyboard.json`, a Markdown shot list, and a self-contained `storyboard-report.html`:
@@ -35,7 +36,7 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | On-screen cap | ≤ 3 characters per cut, more requires a breakdown note |
 | Segment ID discipline | `E01-01` format, sequential — the segment ID is the asset filename |
 | Size phrase | the English shot-size phrase must appear in the cut's frame prompt |
-| Camera vocabulary | camera moves use H3's official terms (`Push In` / `Pan Left` / `Tracking Shot`…) and must appear inside **that cut's own [Shot k] passage** |
+| Camera execution | the H3 camera term appears inside its own `[Shot k]`; in cinematic mode the five prompt-ready camera-plan fields, pace/magnitude and transition are audited verbatim, static/dynamic settings must agree, and conflicting moves in one cut fail |
 | **H3 structure** | the alignment line is **derived from the cut structure and audited verbatim**; three fields in order; every `[Shot k]` cut time equals the running sum of prior cut durations |
 | **H3 dialogue verbatim** | every claimed line appears verbatim inside a `<d>` block — one changed punctuation mark fails |
 | **Prompt language consistency** | prose audited both ways against `promptLang`: Chinese drama written in English fails, English mode mixing Chinese fails |
@@ -75,7 +76,7 @@ A single-page, 1600px-wide review document. Reports render with a Chinese UI by 
 
 - **KPI band**: segments / cuts with average length / total vs target / generation batches / segments carrying dialogue
 - **Cut rhythm strip** (the signature chart): one band per episode, **thick separators = segment boundaries (one generation each)**, slice width = cut duration share, color depth = shot size; click a slice to jump to its segment card
-- **Segment cards**: the master frame in 16:9 (an honest prompt placeholder when not generated), a sub-frame strip, then a **50/50 split**: cut rows on the left (start mark · seconds · size · camera · recipe · picture summary **auto-derived from the claimed script beats**), and an H3 prompt panel on the right — one shot per line, with one-click copy
+- **Segment cards**: the master frame in 16:9 (an honest prompt placeholder when not generated), a sub-frame strip, then a **50/50 split**: cut rows on the left (start mark · seconds · size · camera · transition · full camera plan · recipe · picture summary **auto-derived from the claimed script beats**), and an H3 prompt panel on the right — one shot per line, with one-click copy
 - **Generation batch list**: segments sharing a scene + lighting state form one batch around one environment reference image
 - **Audio alignment list**: every dialogue line mapped to **segment#cut** — the worklist for placing TTS audio, fully computed
 - **Quality gates** panel + header badge + **Export JSON** (downloads `storyboard.json` verbatim)
@@ -119,7 +120,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-254 assertions — beat expansion, H3 skeleton derivation, stats and batching, gate-defeating cases, recipe-card parsing and mounting, seed, rendering (both report UI languages), export. No model calls, runs in about a second.
+270 assertions — beat expansion, H3 skeleton derivation, controlled cinematic camera plans, stats and batching, gate-defeating cases, recipe-card parsing and mounting, seed, rendering (both report UI languages), export. No model calls, runs in about a second.
 
 The bundled example (`examples/渡口-storyboard.json`) is a complete episode-1 storyboard — 10 segments, 34 cuts claiming all 35 script beats at ~3.5s per cut, 119s against a 120s target, 2 generation batches, every segment carrying a fully audited H3 prompt.
 
