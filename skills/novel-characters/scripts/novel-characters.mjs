@@ -205,8 +205,8 @@ export const DEFAULT_LANG = 'zh';
 /*
  * 换风格是整套换，不是只换一句「画风」。
  *
- * 最容易踩的坑：两个预设的 negativePrompt 几乎是相反的。写实那套刚把
- * photorealistic 从反向词里删掉，吉卜力恰恰要禁它。毛孔、皮下散射、
+ * 最容易踩的坑：写实与非写实预设的 negativePrompt 几乎是相反的。写实那套刚把
+ * photorealistic 从反向词里删掉，吉卜力和水墨恰恰要禁它。毛孔、皮下散射、
  * 顺表情肌的皱纹在写实里是加分项，在吉卜力里是反效果。
  *
  * 所以每个预设自带五块：render / surface / lighting / negative / tags，
@@ -231,6 +231,19 @@ export const STYLE_PRESETS = {
     tags: ['semi-realistic', 'painterly', 'character sheet', 'subsurface skin', 'directional key light'],
   },
 
+  cinematic: {
+    label: { zh: '电影级真人写实', en: 'Cinematic photorealism', ja: '映画級フォトリアル' },
+    render:
+      'Cinematic live-action character design sheet with feature-film photorealism, physically grounded anatomy, natural lens response, subtle depth and restrained filmic colour grading',
+    surface:
+      'Authentic skin with visible pores, fine vellus hair, uneven tone and subtle subsurface response; eyes with natural moisture, layered iris detail and catchlights shaped by the key light; individual hair strands with believable density and flyaways; wardrobe built from production-ready fabrics with visible weave, seams, wear, weight and realistic fold behaviour',
+    lighting:
+      'LIGHTING IN THE LEFT ZONE ONLY: motivated feature-film portrait lighting with a large soft key, controlled negative fill, a subtle edge light and natural falloff that preserves highlight and shadow detail. LIGHTING IN THE RIGHT ZONES: neutral flat orthographic studio lighting with no dramatic key or cast shadows, keeping the turnaround measurable and cleanly cut out',
+    negative:
+      'plastic or waxy skin, beauty-filter smoothing, uncanny synthetic face, game-engine sheen, over-sharpened HDR, crushed blacks, clipped highlights, artificial teal-orange grading, glamour retouching, stiff mannequin posing, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
+    tags: ['cinematic photorealism', 'live-action character sheet', 'feature-film lighting', 'natural skin', 'filmic colour'],
+  },
+
   ghibli: {
     label: { zh: '吉卜力动画', en: 'Ghibli-like animation', ja: 'ジブリ風アニメ' },
     render:
@@ -245,6 +258,19 @@ export const STYLE_PRESETS = {
     negative:
       'photorealistic, 3d render, hyperrealistic skin texture, visible pores, subsurface scattering, harsh contrast, heavy painterly rendering, muddy or desaturated colours, gritty texture overlay, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
     tags: ['ghibli-like', 'cel shading', 'hand-painted', 'character sheet', 'flat daylight'],
+  },
+
+  inkwash: {
+    label: { zh: '国风水墨', en: 'Chinese ink-wash', ja: '中国水墨画' },
+    render:
+      'Chinese ink-wash character illustration on white xuan paper, expressive calligraphic contour lines, layered black ink washes, restrained mineral-colour accents, elegant negative space',
+    surface:
+      'Facial structure described with sparse confident brush lines and soft ink gradients; hair grouped into flowing calligraphic masses; clothing expressed through rhythmic folds, dry-brush texture and restrained colour accents; no photographic skin texture or fabric micro-detail',
+    lighting:
+      'Soft high-key diffuse lighting across the whole character sheet, tonal depth expressed through layered ink density rather than photographic highlights or cast shadows, keeping every figure cleanly cut out against the white paper',
+    negative:
+      'photorealistic, 3d render, realistic skin pores, plastic skin, glossy CGI, neon colours, heavy oil paint, western comic style, messy ink splashes over the face, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
+    tags: ['Chinese ink wash', 'calligraphic linework', 'character sheet', 'xuan paper', 'restrained colour'],
   },
 };
 
@@ -722,15 +748,15 @@ export function validateCast(characters, sourceText, lang = DEFAULT_LANG, style 
       }
     }
     // --- 风格与提示词必须匹配 ---
-    // 两个预设的反向提示词几乎是相反的，搞反了整批图都毁。
+    // 写实与非写实预设的反向提示词几乎是相反的，搞反了整批图都毁。
     if (image && SUPPORTED_STYLES.includes(style)) {
       const neg = typeof image.negativePrompt === 'string' ? image.negativePrompt : '';
       const bansRealism = /photorealistic|3d render/i.test(neg);
-      if (style === 'realistic' && bansRealism) {
-        at(name, 'style=realistic 却在 negativePrompt 里禁 photorealistic／3d render——自相矛盾');
+      if (['realistic', 'cinematic'].includes(style) && bansRealism) {
+        at(name, `style=${style} 却在 negativePrompt 里禁 photorealistic／3d render——自相矛盾`);
       }
-      if (style === 'ghibli' && !bansRealism) {
-        at(name, 'style=ghibli 的 negativePrompt 必须禁 photorealistic／3d render');
+      if (['ghibli', 'inkwash'].includes(style) && !bansRealism) {
+        at(name, `style=${style} 的 negativePrompt 必须禁 photorealistic／3d render`);
       }
       const preset = stylePreset(style);
       if (typeof image.sheet === 'string' && !image.sheet.includes(preset.render)) {
@@ -1957,7 +1983,7 @@ function main(argv) {
       JSON.stringify(
         {
           default: DEFAULT_STYLE,
-          note: '整块取用，不要混搭；两个预设的 negative 几乎是相反的',
+          note: '整块取用，不要混搭；写实与非写实预设的 negative 几乎是相反的',
           presets: Object.fromEntries(ids.map((id) => [id, STYLE_PRESETS[id]])),
         },
         null,

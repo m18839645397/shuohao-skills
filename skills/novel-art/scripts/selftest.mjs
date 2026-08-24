@@ -47,11 +47,15 @@ const gate = (d, id, names = null) => gateReport(d, names).find((g) => g.id === 
 /* ---------------- 画风预设 ---------------- */
 
 eq(DEFAULT_STYLE, 'realistic', '默认半写实');
-eq(SUPPORTED_STYLES.join(','), 'realistic,ghibli', '两档画风与 novel-characters 同名对齐');
+for (const id of ['realistic', 'cinematic', 'ghibli', 'inkwash']) ok(SUPPORTED_STYLES.includes(id), `内置 ${id} 预设`);
 ok(!/photorealistic/.test(SCENE_STYLE_PRESETS.realistic.negative), 'realistic 不禁 photorealistic');
+ok(!/photorealistic/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 不禁 photorealistic');
 ok(/photorealistic/.test(SCENE_STYLE_PRESETS.ghibli.negative), 'ghibli 必须禁 photorealistic');
+ok(/photorealistic/.test(SCENE_STYLE_PRESETS.inkwash.negative), 'inkwash 必须禁 photorealistic');
 ok(/people/.test(SCENE_STYLE_PRESETS.realistic.negative), 'realistic 预设自带禁人');
+ok(/people/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 预设自带禁人');
 ok(/people/.test(SCENE_STYLE_PRESETS.ghibli.negative), 'ghibli 预设自带禁人');
+ok(/people/.test(SCENE_STYLE_PRESETS.inkwash.negative), 'inkwash 预设自带禁人');
 ok(!/pore|skin|subsurface/i.test(SCENE_STYLE_PRESETS.realistic.surface), '环境预设不带皮肤毛孔那套——那是角色的');
 eq(scenePreset('nope'), SCENE_STYLE_PRESETS.realistic, '未知风格退回默认');
 

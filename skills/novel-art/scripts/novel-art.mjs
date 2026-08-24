@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /* 画风预设（环境版）                                                    */
 /* ------------------------------------------------------------------ */
 /*
- * 与 novel-characters 的两档画风同名对齐（realistic / ghibli），
+ * 与 novel-characters 的画风同名对齐（realistic / cinematic / ghibli / inkwash），
  * 但内容是环境的表面处理，不是皮肤毛孔——把角色那套带进环境是错的。
  * 换风格是整套换：render / surface / negative / tags 整块取用，不混搭。
  *
@@ -34,6 +34,17 @@ export const SCENE_STYLE_PRESETS = {
     tags: ['semi-realistic', 'environment sheet', 'painterly', 'weathered materials', 'cinematic'],
   },
 
+  cinematic: {
+    label: '电影级真人写实',
+    render:
+      'Photorealistic feature-film environment concept art, live-action production design, physically plausible architecture and materials, cinematic lens depth, controlled contrast and restrained filmic colour grading',
+    surface:
+      'Production-ready material realism: authentic stone, wood, metal, glass, fabric and paper response; fine wear, dust, moisture, patina and construction detail at believable scale; natural atmospheric perspective, practical light interaction and preserved highlight-to-shadow detail without a synthetic CGI sheen',
+    negative:
+      'people, human figures, characters, crowds, silhouettes of people, plastic CGI look, game-engine sheen, over-sharpened HDR, crushed blacks, clipped highlights, artificial teal-orange grading, sterile showroom cleanliness, warped perspective, melted geometry, floating objects, text, watermark, signature',
+    tags: ['cinematic photorealism', 'feature-film production design', 'environment sheet', 'physical materials', 'filmic colour'],
+  },
+
   ghibli: {
     label: '吉卜力动画',
     render:
@@ -44,6 +55,17 @@ export const SCENE_STYLE_PRESETS = {
     negative:
       'people, human figures, characters, crowds, photorealistic, 3d render, hyperrealistic texture, harsh contrast, gritty grime, lens effects, text, watermark, signature',
     tags: ['ghibli-like', 'background art', 'watercolour', 'environment sheet', 'warm palette'],
+  },
+
+  inkwash: {
+    label: '国风水墨',
+    render:
+      'Chinese ink-wash environment concept art on textured xuan paper, layered black ink washes, expressive dry-brush architecture, atmospheric empty space, restrained mineral-colour accents',
+    surface:
+      'Architecture and natural materials described through varied ink density, broken dry-brush edges and sparse calligraphic detail; mist, distance and depth expressed through untouched paper and diluted washes; no photographic micro-detail',
+    negative:
+      'people, human figures, characters, crowds, silhouettes of people, photorealistic, 3d render, glossy CGI, neon colours, western comic style, heavy oil paint, warped perspective, text, watermark, signature',
+    tags: ['Chinese ink wash', 'environment sheet', 'xuan paper', 'dry brush', 'restrained colour'],
   },
 };
 
@@ -210,8 +232,8 @@ export function gateReport(doc, castNames = null) {
 
     // 风格与反向词匹配 + sheet 带渲染句
     const bansRealism = /photorealistic|3d render/i.test(neg);
-    if (style === 'realistic' && bansRealism) bad.style.push(`${label} 禁了 photorealistic`);
-    if (style === 'ghibli' && !bansRealism) bad.style.push(`${label} 没禁 photorealistic`);
+    if (['realistic', 'cinematic'].includes(style) && bansRealism) bad.style.push(`${label} 禁了 photorealistic`);
+    if (['ghibli', 'inkwash'].includes(style) && !bansRealism) bad.style.push(`${label} 没禁 photorealistic`);
     if (thText(s?.image?.sheet) && !s.image.sheet.includes(preset.render)) bad.style.push(`${label} 的 sheet 缺渲染句`);
   }
 
@@ -464,7 +486,7 @@ const I18N = {
     langCode: 'en',
     kicker: 'Art Bible',
     docTitle: (s) => `${s} · Art Bible`,
-    styleLine: (id) => `Style: ${({ realistic: 'semi-realistic painterly', ghibli: 'Ghibli-style animation' })[id] ?? id}`,
+    styleLine: (id) => `Style: ${({ realistic: 'semi-realistic painterly', cinematic: 'cinematic photorealism', ghibli: 'Ghibli-style animation', inkwash: 'Chinese ink-wash' })[id] ?? id}`,
     exportJson: 'Export JSON',
     gates: 'Quality gates',
     gatesPass: 'All passed',

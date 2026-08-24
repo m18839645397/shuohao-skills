@@ -83,7 +83,9 @@ Two things never follow the language: **image and TTS prompts stay English** (th
 | id | What it is |
 | --- | --- |
 | `realistic` | Semi-realistic painterly — skin with pores and texture, fabric with weave and wear. Default |
+| `cinematic` | Cinematic photorealism — natural skin, feature-film portrait lighting, physically grounded wardrobe and restrained filmic colour |
 | `ghibli` | Ghibli-like hand-painted cel — even ink linework, a single soft shadow tone, flat colour |
+| `inkwash` | Chinese ink-wash — xuan-paper negative space, calligraphic linework and restrained mineral-colour accents |
 
 They combine: `--lang ja --style ghibli`.
 
@@ -140,7 +142,7 @@ Four hard rules, all checked deterministically by a script rather than trusted t
 | `evidence` must be a **verbatim, contiguous** span of the source | Stops invention. Dialogue split by a narration beat may not be stitched back together |
 | Image prompts must **not contain character names** | Image models bias hard on names and will draw the character they remember instead of yours |
 | **Language split** per field | Human-readable fields follow `--lang`, image and TTS prompts are always English — the model drifts otherwise |
-| **Style matches its negative prompt** | `realistic` must not ban `photorealistic`, `ghibli` must — get it backwards and the whole batch is wasted |
+| **Style matches its negative prompt** | `realistic` / `cinematic` must not ban `photorealistic`; `ghibli` / `inkwash` must — get it backwards and the whole batch is wasted |
 | Structure and enums | `importance` is one of exactly four values |
 
 None of these were written up front. Each one exists because real model output violated it and the validator caught it.
@@ -182,7 +184,7 @@ references/
   schema.md              sheet structure and which language each field takes
   sheet.md               the codex contract for model-sheet generation
   report-style.md        design conventions for report.html
-  style-presets.md       image style presets (realistic / ghibli)
+  style-presets.md       image style presets (realistic / cinematic / ghibli / inkwash)
 examples/
   渡口.txt                bundled short story, 4 characters
   渡口-cast.json          its output, doubling as the validation fixture

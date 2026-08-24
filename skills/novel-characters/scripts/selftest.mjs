@@ -706,7 +706,7 @@ ok(
 
 /* ---------------- 画风预设 ---------------- */
 
-for (const id of ['realistic', 'ghibli']) ok(SUPPORTED_STYLES.includes(id), `内置 ${id} 预设`);
+for (const id of ['realistic', 'cinematic', 'ghibli', 'inkwash']) ok(SUPPORTED_STYLES.includes(id), `内置 ${id} 预设`);
 eq(stylePreset('nope').render, STYLE_PRESETS.realistic.render, '未知风格退回默认');
 // 每个预设都要五块齐全，缺一块就会跟另一个预设混搭出四不像
 for (const [id, p] of Object.entries(STYLE_PRESETS)) {
@@ -715,13 +715,15 @@ for (const [id, p] of Object.entries(STYLE_PRESETS)) {
   }
   ok(p.label.zh && p.label.en && p.label.ja, `${id} 预设有三语标签`);
 }
-// 这是整件事最容易搞反的地方：两个预设的反向提示词几乎相反
+// 这是整件事最容易搞反的地方：写实与非写实预设的反向提示词几乎相反
 ok(!/photorealistic|3d render/i.test(STYLE_PRESETS.realistic.negative), 'realistic 不禁写实');
+ok(!/photorealistic|3d render/i.test(STYLE_PRESETS.cinematic.negative), 'cinematic 不禁写实');
 ok(/photorealistic/i.test(STYLE_PRESETS.ghibli.negative), 'ghibli 必须禁写实');
+ok(/photorealistic/i.test(STYLE_PRESETS.inkwash.negative), 'inkwash 必须禁写实');
 // 写实的表面细节在吉卜力里是反效果，两边不能是同一段
 ok(/visible pores/i.test(STYLE_PRESETS.realistic.surface), 'realistic 要毛孔');
 ok(/no pores/i.test(STYLE_PRESETS.ghibli.surface), 'ghibli 明确不要毛孔');
-ok(STYLE_PRESETS.realistic.surface !== STYLE_PRESETS.ghibli.surface, '两个预设的表面处理不同');
+ok(STYLE_PRESETS.realistic.surface !== STYLE_PRESETS.ghibli.surface, '写实与吉卜力的表面处理不同');
 
 // 校验器要能抓住风格与反向提示词搞反
 const wrongStyle = clone();

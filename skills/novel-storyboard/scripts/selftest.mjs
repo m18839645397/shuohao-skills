@@ -335,7 +335,7 @@ eq(h3Remainder('a <d>[Chinese] 你好</d> b "营业中" c'), 'a   b   c', 'h3Rem
 // style-phrase — 同剧分镜图画风不许漂
 {
   eq(DEFAULT_STYLE, 'realistic', '默认半写实');
-  ok(STYLE_PRESETS.realistic.phrase && STYLE_PRESETS.ghibli.phrase, '预设带风格短语');
+  ok(STYLE_PRESETS.realistic.phrase && STYLE_PRESETS.cinematic.phrase && STYLE_PRESETS.ghibli.phrase && STYLE_PRESETS.inkwash.phrase, '预设带风格短语');
   const doc = clone(FIXTURE);
   doc.style = '油画';
   ok(!gate(doc, 'style-phrase').ok, '不在预设里的风格被拦');
@@ -351,6 +351,30 @@ eq(h3Remainder('a <d>[Chinese] 你好</d> b "营业中" c'), 'a   b   c', 'h3Rem
   const doc = clone(FIXTURE);
   doc.style = 'ghibli';
   ok(!gate(doc, 'style-phrase').ok, '换成吉卜力后写实短语不再达标——换风格是整批换');
+}
+{
+  const doc = clone(FIXTURE);
+  doc.style = 'cinematic';
+  for (const ep of doc.episodes) {
+    for (const seg of ep.segments) {
+      for (const cut of seg.cuts) {
+        cut.frame = cut.frame.replace('cinematic film still', STYLE_PRESETS.cinematic.phrase);
+      }
+    }
+  }
+  ok(gate(doc, 'style-phrase').ok, '电影级真人写实分镜统一带风格短语时通过');
+}
+{
+  const doc = clone(FIXTURE);
+  doc.style = 'inkwash';
+  for (const ep of doc.episodes) {
+    for (const seg of ep.segments) {
+      for (const cut of seg.cuts) {
+        cut.frame = cut.frame.replace('cinematic film still', STYLE_PRESETS.inkwash.phrase);
+      }
+    }
+  }
+  ok(gate(doc, 'style-phrase').ok, '国风水墨分镜统一带风格短语时通过');
 }
 
 /* ---------------- 镜头配方卡库（可选挂载） ---------------- */

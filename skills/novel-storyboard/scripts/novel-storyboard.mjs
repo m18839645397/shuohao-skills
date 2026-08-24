@@ -68,11 +68,13 @@ export const CAMERA_MOVES = {
   'Roll Counterclockwise': '逆旋',
 };
 
-/** 分镜图风格预设：与 novel-characters / novel-art 同名对齐（realistic / ghibli）。
+/** 分镜图风格预设：与 novel-characters / novel-art 同名对齐（realistic / cinematic / ghibli / inkwash）。
  *  短语必须出现在每条分镜图提示词里——同一部剧的分镜图不许画风漂。 */
 export const STYLE_PRESETS = {
   realistic: { zh: '半写实电影感', phrase: 'cinematic film still' },
+  cinematic: { zh: '电影级真人写实', phrase: 'photorealistic feature-film frame' },
   ghibli: { zh: '吉卜力手绘', phrase: 'hand-painted anime film still' },
+  inkwash: { zh: '国风水墨', phrase: 'chinese ink-wash cinematic frame' },
 };
 export const DEFAULT_STYLE = 'realistic';
 
@@ -532,7 +534,7 @@ export function gateReport(board, ctx = {}) {
         const frame = String(cut?.frame ?? '');
         if (!frame.trim()) bad.english.push(`${cid} 的分镜图提示词为空`);
         if (CJK.test(frame)) bad.english.push(`${cid} 的分镜图提示词混入了非英文`);
-        if (style && !frame.toLowerCase().includes(style.phrase)) {
+        if (style && !frame.toLowerCase().includes(style.phrase.toLowerCase())) {
           bad.style.push(`${cid} 的分镜图提示词缺风格短语「${style.phrase}」`);
         }
         for (const name of banned) {

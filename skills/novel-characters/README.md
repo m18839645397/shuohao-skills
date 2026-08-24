@@ -8,7 +8,7 @@
 - **人物画像** — 性别、年龄、身份、外貌、性情、动机、人物弧光、关系网，每条附**原文逐字引文**
 - **形象提示词** — 半写实厚涂路线，双语出图 prompt + negative prompt + 风格标签，直接喂 Midjourney / SD / GPT-Image
 - **音色提示词** — 音色、音高、语速、口音、情绪，双语 voice-design prompt，直接喂 Qwen3-TTS / ElevenLabs Voice Design
-- **角色设定图** — **每个角色一张**：16:9 分三区，左侧约 34% 证件照式半身像（面部基准）、右上全身三视图、右下关键细节特写条。**画风可选**：默认半写实厚涂，也可以出吉卜力动画风。白底方便抠图，走 codex 内置出图（可选）
+- **角色设定图** — **每个角色一张**：16:9 分三区，左侧约 34% 证件照式半身像（面部基准）、右上全身三视图、右下关键细节特写条。**画风可选**：默认半写实厚涂，也可以出电影级真人写实、吉卜力动画风或国风水墨。白底方便抠图，走 codex 内置出图（可选）
 - **关系图谱** — 报告里的一个全景视图：谁跟谁有关系、是什么关系，一眼看完。悬停一个人亮出他的全部关系，点一下跳到那个人的详情
 
 产出 `cast.json` + Markdown + 一个双击就能开的 `report.html`。
@@ -89,7 +89,9 @@ node scripts/novel-characters.mjs seed outline.json > seed.json
 | id | 说明 |
 | --- | --- |
 | `realistic` | 半写实厚涂，皮肤有毛孔和肌理，布料有织纹磨损。默认 |
+| `cinematic` | 电影级真人写实，真实肤质、电影人像布光、物理可信服装材质与克制电影调色 |
 | `ghibli` | 吉卜力式手绘赛璐璐，等宽墨线、单层柔和阴影、平涂色块 |
+| `inkwash` | 国风水墨，宣纸留白、书法线条、分层墨色与克制矿物色点染 |
 
 两个可以组合：`--lang ja --style ghibli`。
 
@@ -147,7 +149,7 @@ node scripts/novel-characters.mjs styles ghibli   # 看某一个的完整内容
 | `evidence` 必须是原文**逐字连续**片段 | 防编造。被「他说」断开的对白不许拼接 |
 | 出图 prompt **不许出现人名** | 图像模型对人名偏见极重，会画成它记忆里的角色 |
 | 字段**语言分工** | 人类字段跟随 `--lang`、出图和 TTS 提示词永远英文，模型会漂 |
-| **风格与反向提示词匹配** | `realistic` 不能禁 `photorealistic`、`ghibli` 必须禁，搞反整批图就废 |
+| **风格与反向提示词匹配** | `realistic` / `cinematic` 不能禁 `photorealistic`、`ghibli` / `inkwash` 必须禁，搞反整批图就废 |
 | 结构 + 枚举 | `importance` 只能是那四个值 |
 
 这四条不是拍脑袋定的——是模型输出真的违反过、被校验脚本当场抓住才立起来的。
@@ -189,7 +191,7 @@ references/
   schema.md              角色卡结构 + 字段语言归属
   sheet.md               角色设定图出图的 codex 调用契约
   report-style.md        report.html 的设计约定
-  style-presets.md       出图风格预设（realistic / ghibli）
+  style-presets.md       出图风格预设（realistic / cinematic / ghibli / inkwash）
 examples/
   渡口.txt                自带短故事，4 个角色
   渡口-cast.json          产出，同时是校验自检夹具
