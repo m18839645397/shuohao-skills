@@ -1,6 +1,6 @@
 # H3 视频提示词 · 写法规范（内化版）
 
-方法论学自 MiniMax-H3 官方提示词指南（I2VA / 多图对齐模式），**内化成本 skill 自带文档——不依赖任何外部 skill**。写每段的 `h3Prompt` 照这份做，结构部分有质量门逐字对账。
+方法论学自 MiniMax-H3 官方提示词指南（I2VA / 多图对齐模式），**内化成本 skill 自带文档——不依赖任何外部 skill**。写每段的 `h3Prompt` 照这份做；先读 `camera-direction.md` 和 `prompt-detail.md`，结构与投产信息都有质量门逐字对账。
 
 ## 语言分工
 
@@ -15,12 +15,12 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 （单分镜的段改用官方 I2VA 固定句：For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.）
 
 integrated_multimodal_description:
-[Shot 1] Cinematic, live-action, cold gray-green palette. 按 <Picture 1> 的构图锚定人物与状态，再按 cameraPlan 写转场、起始机位、动作、速度/幅度、主运镜与目标、焦点、结束构图、导演意图，最后写台词（全英文）。
+[Shot 1] Cinematic, live-action, cold gray-green palette. 按 <Picture 1> 锚定构图，依次写 visualPlan 的空间、光线、主体、动作，cameraPlan 的运镜执行，再写效果、结束状态、连续性、导演意图和台词（全英文）。
 [Shot 2] At 00:03.000, the camera cuts to <Picture 2>: ……（**每个镜头独立一行**，切点时刻开头，等于前面分镜秒数的累计）
 
-overall_soundscape: 1–4 句英文：环境声、动作声、非语言人声。不复述台词。
+overall_soundscape: audioPlan.soundscape 的基底、渐强、事件、余韵四层。不复述台词。
 
-non_diegetic_music: 1–3 句英文写配器与速度（角色听不见、只有观众听得见）。没有就写 N/A。
+non_diegetic_music: 有配乐时写 audioPlan.music 的类型、配器、动态曲线、同步点；没有就写 N/A。
 ```
 
 中文模式（promptLang=zh）的对应 token：`参考图与目标视频的对齐——` / `整体视听描述：` / `[镜头 k] 于 00:0X.XXX，`，配乐没有写「无」。
@@ -46,6 +46,7 @@ non_diegetic_music: 1–3 句英文写配器与速度（角色听不见、只有
 
 - 台词、歌声、剧内音乐 → 描述字段；环境与动作声 → `overall_soundscape`；配乐 → `non_diegetic_music`
 - **声景也是动作指令**：画面动作改了，声景必须一起改——声景里写「铜铃在撞击时炸响」，视频就真把撞击演出来
+- 新 seed 默认 `promptDetailMode: "production-rich"`。逐切 `visualPlan` 六层、逐段 `audioPlan.soundscape` 四层和有配乐时的 `audioPlan.music` 四层必须逐字进入对应字段，详见 `prompt-detail.md`。
 
 ## 关键帧怎么用
 

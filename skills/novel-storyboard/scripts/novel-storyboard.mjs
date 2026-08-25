@@ -73,6 +73,11 @@ export const CAMERA_PLAN_MODE = 'cinematic-controlled';
 export const CAMERA_PLAN_PACES = ['static', 'slow', 'steady', 'fast'];
 export const CAMERA_PLAN_MAGNITUDES = ['none', 'subtle', 'moderate', 'large'];
 export const CAMERA_PLAN_FIELDS = ['start', 'target', 'end', 'focus', 'intent'];
+/** 投产级丰富提示词：视觉逐切，声景与配乐逐段；新 seed 默认开启。 */
+export const PROMPT_DETAIL_MODE = 'production-rich';
+export const VISUAL_PLAN_FIELDS = ['environment', 'lighting', 'subject', 'action', 'effects', 'continuity'];
+export const SOUND_PLAN_FIELDS = ['baseline', 'build', 'events', 'aftermath'];
+export const MUSIC_PLAN_FIELDS = ['style', 'instrumentation', 'arc', 'sync'];
 export const TRANSITION_TOKENS = {
   'straight-cut': { en: 'straight cut', zh: '直接切入' },
   'cut-on-action': { en: 'cut-on-action', zh: '动作中切入' },
@@ -194,6 +199,19 @@ export function h3CutSlices(prompt, cutCount, lang = 'en') {
     slices.push(body.slice(a, b < 0 ? undefined : b));
   }
   return slices;
+}
+
+/** 取 H3 三个核心字段中某一段的正文（0=描述、1=声景、2=配乐）。 */
+export function h3FieldValue(prompt, fieldIndex, lang = 'en') {
+  const tk = H3_TOKENS[lang] ?? H3_TOKENS.zh;
+  const h3 = String(prompt ?? '');
+  const token = tk.fields[fieldIndex];
+  const start = h3.indexOf(token);
+  if (start < 0) return '';
+  const bodyStart = start + token.length;
+  const nextToken = tk.fields[fieldIndex + 1];
+  const end = nextToken ? h3.indexOf(nextToken, bodyStart) : -1;
+  return h3.slice(bodyStart, end < 0 ? undefined : end).trim();
 }
 
 /* ------------------------------------------------------------------ */
@@ -450,7 +468,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -464,6 +482,37 @@ export function gateReport(board, ctx = {}) {
   if (board?.cameraPlanMode && !cameraPlanRequired) {
     bad.cameraPlan.push(`cameraPlanMode「${board.cameraPlanMode}」不支持，应为「${CAMERA_PLAN_MODE}」`);
   }
+  const promptDetailRequired = board?.promptDetailMode === PROMPT_DETAIL_MODE;
+  if (board?.promptDetailMode && !promptDetailRequired) {
+    bad.promptDetail.push(`promptDetailMode「${board.promptDetailMode}」不支持，应为「${PROMPT_DETAIL_MODE}」`);
+  }
+  const detailMinChars = promptLang === 'en' ? 24 : 10;
+  const checkPromptFields = (obj, fields, owner, text) => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+      bad.promptDetail.push(`${owner} 缺结构化计划`);
+      return false;
+    }
+    let ready = true;
+    const haystack = promptLang === 'en' ? String(text ?? '').toLowerCase() : String(text ?? '');
+    for (const field of fields) {
+      const value = typeof obj[field] === 'string' ? obj[field].trim() : '';
+      if (!value) {
+        bad.promptDetail.push(`${owner}.${field} 为空`);
+        ready = false;
+        continue;
+      }
+      if (value.length < detailMinChars) {
+        bad.promptDetail.push(`${owner}.${field} 太短（${value.length} 字符，至少 ${detailMinChars}）`);
+        ready = false;
+      }
+      const needle = promptLang === 'en' ? value.toLowerCase() : value;
+      if (!haystack.includes(needle)) {
+        bad.promptDetail.push(`${owner}.${field} 没有逐字进入对应提示词`);
+        ready = false;
+      }
+    }
+    return ready;
+  };
 
   // 提示词禁人名：outline 的名字 + cast 的名字与别名
   const banned = [];
@@ -525,6 +574,27 @@ export function gateReport(board, ctx = {}) {
       }
 
       const slices = h3CutSlices(h3, cuts.length, promptLang);
+      if (promptDetailRequired) {
+        const audio = seg?.audioPlan;
+        const soundscape = h3FieldValue(h3, 1, promptLang);
+        const musicText = h3FieldValue(h3, 2, promptLang);
+        if (!audio || typeof audio !== 'object' || Array.isArray(audio)) {
+          bad.promptDetail.push(`${sid} 缺 audioPlan`);
+        } else {
+          checkPromptFields(audio.soundscape, SOUND_PLAN_FIELDS, `${sid}.audioPlan.soundscape`, soundscape);
+          const music = audio.music;
+          if (!music || typeof music !== 'object' || Array.isArray(music)) {
+            bad.promptDetail.push(`${sid}.audioPlan 缺 music`);
+          } else if (music.mode === 'none') {
+            const noneToken = promptLang === 'en' ? 'N/A' : '无';
+            if (!musicText.includes(noneToken)) bad.promptDetail.push(`${sid} 配乐 mode=none，但 non_diegetic_music 缺「${noneToken}」`);
+          } else if (music.mode === 'scored') {
+            checkPromptFields(music, MUSIC_PLAN_FIELDS, `${sid}.audioPlan.music`, musicText);
+          } else {
+            bad.promptDetail.push(`${sid}.audioPlan.music.mode「${music.mode}」必须是 scored 或 none`);
+          }
+        }
+      }
       const scene = sEp ? sEp.scenes[seg?.sceneIndex - 1] : null;
       if (sEp && !scene) bad.refs.push(`${sid} 的 sceneIndex ${seg?.sceneIndex} 在剧本第 ${ep.ep} 集里不存在`);
       if (scene) {
@@ -627,6 +697,9 @@ export function gateReport(board, ctx = {}) {
               }
             }
           }
+        }
+        if (promptDetailRequired) {
+          checkPromptFields(cut?.visualPlan, VISUAL_PLAN_FIELDS, `${cid}.visualPlan`, slices[ci]);
         }
         const frame = String(cut?.frame ?? '');
         if (!frame.trim()) bad.english.push(`${cid} 的分镜图提示词为空`);
@@ -765,6 +838,12 @@ export function gateReport(board, ctx = {}) {
   add('h3-structure', 'H3 首行对齐指令由分镜结构推导逐字对账，切点时刻逐个对', eps.length > 0 && bad.h3s.length === 0, bad.h3s.join('；'));
   add('h3-dialogue', '认领节拍的台词逐字进 H3 提示词的 <d> 块', bad.h3d.length === 0, script ? bad.h3d.join('；') : SKIP_SCRIPT);
   add('h3-lang', `H3 提示词语言与设定一致（promptLang=${promptLang}，正文${promptLang === 'en' ? '全英文' : '中文'}、骨架 token 官方英文格式）`, bad.h3e.length === 0, bad.h3e.join('；'));
+  add(
+    'prompt-detail',
+    '投产级提示词逐切包含环境／光线／主体／动作／效果／连续性，逐段包含分层声景与配乐动态',
+    bad.promptDetail.length === 0,
+    bad.promptDetail.length ? bad.promptDetail.join('；') : promptDetailRequired ? '' : `未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`,
+  );
   add('style-phrase', `分镜图风格短语统一（${style ? `${styleId}：${style.phrase}` : '预设无效'}）——同剧不许画风漂`, bad.style.length === 0, bad.style.join('；'));
   add('prompt-english', '分镜图提示词全英文且非空', bad.english.length === 0, bad.english.join('；'));
   add('prompt-no-names', '英文提示词不含角色名（分镜图提示词恒查；中文 H3 提示词放行）', bad.names.length === 0, banned.length ? bad.names.join('；') : SKIP_NAMES);
@@ -859,7 +938,12 @@ export function seedFromScript(script, epRange = null) {
       })),
     });
   }
-  return { source: script?.source ?? '', cameraPlanMode: CAMERA_PLAN_MODE, episodes };
+  return {
+    source: script?.source ?? '',
+    cameraPlanMode: CAMERA_PLAN_MODE,
+    promptDetailMode: PROMPT_DETAIL_MODE,
+    episodes,
+  };
 }
 
 /* ------------------------------------------------------------------ */
@@ -942,6 +1026,7 @@ const GATE_LABELS_EN = {
   'h3-structure': 'H3 alignment line derived from the cut structure, audited verbatim; cut times match',
   'h3-dialogue': 'Claimed dialogue appears verbatim inside the H3 <d> blocks',
   'h3-lang': 'Prompt language matches the promptLang setting',
+  'prompt-detail': 'Production-rich prompt: visual layers per cut, layered soundscape and scored music arc per segment',
   'style-phrase': 'Frame-prompt style phrase consistent — one drama, one look',
   'prompt-english': 'Frame prompts are English and non-empty',
   'prompt-no-names': 'English prompts carry no character names',
@@ -957,6 +1042,7 @@ const GATE_SKIPS_EN = {
     '未挂载配方卡库（--shots <卡片目录>），本门跳过（视为通过）': 'no recipe card library mounted (--shots <cards dir>) — gate skipped (treated as passing)',
     '本批分镜没有引用配方': 'no cut in this batch references a recipe',
     [`未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`]: `cameraPlanMode=${CAMERA_PLAN_MODE} not enabled — execution-plan checks skipped`,
+    [`未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`]: `promptDetailMode=${PROMPT_DETAIL_MODE} not enabled — richness checks skipped`,
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {

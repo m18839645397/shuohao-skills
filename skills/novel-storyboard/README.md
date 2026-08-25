@@ -15,13 +15,14 @@
 - **对齐指令是推导出来的，不是写出来的** — 多图对齐句式（`Picture 2 aligns with the 3.00-second mark…`）和 `[Shot k] At 00:0X.XXX` 切点时刻全部由分镜秒数推导，validate **逐字对账**：改了秒数忘改提示词，当场拦
 - **提示词按官方口径默认英文、逐镜换行** — 每个镜头独立一行、切点时刻开头；台词/歌词/画面文字按官方规定保留原文（`<d>[Chinese] …</d>` 逐字）。`promptLang: 'zh'` 可切整条中文（对齐指令、字段名、镜头标记都有中文版）。写法规范已内化为 `references/h3-prompt.md`——**本 skill 自包含，不依赖任何外部 skill**
 - **每切有可执行的摄影计划** — 新 seed 默认开启 `cameraPlanMode: "cinematic-controlled"`：起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场逐字进入自己的 `[Shot k]`；固定镜头默认，一切只用一个主运镜
+- **最终提示词达到投产丰富度** — `promptDetailMode: "production-rich"` 要求逐切写空间、光线、主体、动作、效果、连续性，逐段写四层声景和配乐类型/配器/动态/同步点；不是靠字数堆形容词
 - **分镜图是资产合成，不是凭空画** — 出图挂场景/角色/道具设定图当参考图，novel-art 和 novel-characters 的图在这一步真正被消费。有 codex 就真出图（可选）
 
 产出 `storyboard.json` + Markdown + 一个双击就能开的 `storyboard-report.html`：
 
 ![storyboard-report.html](assets/report.webp)
 
-## 质量门：17 道，全是代码
+## 质量门：18 道，全是代码
 
 与仓库里另外四个 skill 同一主张：**checklist 交给模型自觉是靠不住的**。
 
@@ -39,6 +40,7 @@
 | **H3 结构** | 首行对齐指令**由分镜结构按语言推导、逐字对账**；三字段按序；每个 `[Shot k]` 的切点时刻等于前面分镜秒数的累计 |
 | **H3 台词逐字** | 认领的每句台词逐字出现在 `<d>` 块里，改一个标点都过不去 |
 | **提示词语言一致** | 正文语言与 `promptLang` 双向对账：设定中文写成英文、设定英文混进中文，都拦 |
+| **投产提示词丰富度** | 逐切 `visualPlan` 六层、逐段声景四层和有配乐时的音乐四层逐字进入对应 H3 字段，并设中英文最低信息量；无配乐明确 N/A/无 |
 | **风格短语统一** | `style` 预设（realistic / cinematic / ghibli / inkwash，与角色/场景 skill 同名对齐）的英文短语必须出现在每条分镜图提示词里——同剧不许画风漂 |
 | 分镜图提示词卫生 | 全英文非空 |
 | 提示词不含角色名 | 分镜图提示词恒查；H3 提示词仅英文模式查（中文放行，身份靠分镜图锚定）。给 `--outline` / `--cast` 才查，不给**明说跳过** |
@@ -104,7 +106,7 @@ node scripts/novel-storyboard.mjs validate sb.json \
      --script script.json --outline outline.json --cast cast.json
 node scripts/novel-storyboard.mjs checkup sb.json --script script.json
 node scripts/novel-storyboard.mjs validate sb.json --script script.json \
-     --shots /path/to/cards                                              # 可选：开第 17 道配方门
+     --shots /path/to/cards                                              # 可选：开第 18 道配方门
 node scripts/novel-storyboard.mjs render sb.json --html \
      --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en \
@@ -128,11 +130,12 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 投
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / validate / checkup / render / export / slug
-  selftest.mjs           270 项断言，不调模型
+  selftest.mjs           283 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
   camera-direction.md    克制电影化运镜：执行计划、转场、按节拍自动选择
+  prompt-detail.md       投产级丰富提示词：六层视觉、四层声景、配乐动态
   storyboard-pass.md     切镜：分段规则、导演运镜手感、常见病
   frame.md               分镜图出图的 codex 调用契约
   report-style.md        报告的设计约定
@@ -148,6 +151,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-270 项断言，覆盖节拍展开 / H3 骨架推导 / 克制电影化运镜执行计划 / 统计与批次 / 质量门逐项击穿 / 配方卡库解析与挂载 / seed / 渲染（含中英界面）/ 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
+283 项断言，覆盖节拍展开 / H3 骨架推导 / 克制电影化运镜 / 投产级视觉声景与配乐计划 / 统计与批次 / 质量门逐项击穿 / 配方卡库解析与挂载 / seed / 渲染（含中英界面）/ 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
 
 **只在 macOS + Node 24 上实测过。** 代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但**没验过**。

@@ -10,6 +10,7 @@
 {
   "source": "渡口",
   "cameraPlanMode": "cinematic-controlled",
+  "promptDetailMode": "production-rich",
   "style": "realistic",
   "promptLang": "zh",
   "params": { "maxSegmentSeconds": 15, "minCutSeconds": 2, "maxCutSeconds": 5, "maxOnScreen": 3, "tolerance": 0.15 },
@@ -19,7 +20,7 @@
 
 `promptLang` 可省略（**默认 `en`——官方规范口径**）：整条英文、禁角色名，台词在 `<d>[Chinese]` 里保留原文。设成 `zh` 可切整条中文（对齐指令、字段名、镜头标记都有中文版，人名放行）——偏离官方推荐的备选项。`style` 可省略（默认 `realistic`），预设与角色/场景 skill 同名对齐（`realistic` / `cinematic` / `ghibli` / `inkwash`），对应的英文短语（如 `cinematic film still`）必须出现在**每条**分镜图提示词里——同一部剧的分镜图不许画风漂，门查。
 
-`seed` 默认写入 `cameraPlanMode: "cinematic-controlled"`。启用后，每切必须带 `cameraPlan` 与 `transition`，并按 `camera-direction.md` 逐字写入自己的 `[Shot k]`。旧 JSON 没有该字段时继续按旧规则校验，报告会明确提示执行计划检查已跳过。
+`seed` 默认写入 `cameraPlanMode: "cinematic-controlled"` 与 `promptDetailMode: "production-rich"`。前者要求每切 `cameraPlan` / `transition` 按 `camera-direction.md` 进入自己的 `[Shot k]`；后者要求逐切 `visualPlan` 和逐段 `audioPlan` 按 `prompt-detail.md` 进入 H3 三个核心字段。旧 JSON 没有对应模式字段时继续按旧规则校验，报告会明确提示该项检查已跳过。
 
 ## segment（段）
 
@@ -28,6 +29,7 @@
 | `id` | string | 段号 `E01-01`：集号 + 两位序号，**按顺序连号**。它就是素材文件名（`E01-01.mp4` / `E01-01-f1.png`） |
 | `sceneIndex` | int | 这一段在剧本该集的第几场（1 起）。段内全部分镜同场 |
 | `cuts` | cut[] | 段内分镜，按时间顺序。段总秒数 = 分镜秒数之和，**不单独存**——少一处会漂的冗余 |
+| `audioPlan` | object | 投产音频计划：`soundscape` 含 baseline/build/events/aftermath；`music.mode` 为 scored 时含 style/instrumentation/arc/sync，为 none 时配乐字段写 N/A/无 |
 | `h3Prompt` | string | **一段一条 H3 视频提示词**，正文语言跟 `promptLang`（默认中文），结构见 `references/h3-prompt.md` |
 | `note` | string | 备注，可选 |
 
@@ -41,6 +43,7 @@
 | `camera` | enum | 运镜，**直接用 H3 官方词表**（原样字符串）：`Static Shot` `Push In` `Pull Out` `Zoom In/Out` `Pan Left/Right` `Truck Left/Right` `Tilt Up/Down` `Pedestal Up/Down` `Arc Shot` `Tracking Shot` `Shake Slightly/Strongly` `POV` `Roll Clockwise/Counterclockwise` |
 | `cameraPlan` | object | 克制电影化执行计划：`pace`、`magnitude`、`start`、`target`、`end`、`focus`、`intent`；五个文本字段跟随 `promptLang`，是要逐字写进 H3 的 prompt-ready 原句 |
 | `transition` | enum | 本切如何从上一切进入：`straight-cut` / `cut-on-action` / `reaction-cut` / `match-cut` / `reveal-cut` |
+| `visualPlan` | object | 投产视觉计划：`environment` / `lighting` / `subject` / `action` / `effects` / `continuity`，跟随 promptLang，逐字进入本切 `[Shot k]` |
 | `characters` | string[] | 画内人物（C 编号），必须 ⊆ 剧本该场人物；空镜给空数组。> `maxOnScreen` 时必须带 `note` |
 | `props` | string[] | 画内道具（P 编号），必须 ⊆ 剧本该场道具。可省略 |
 | `frame` | string | **分镜图英文提示词**：这一格关键帧的样子。景别英文短语必须在里面；禁角色名 |
@@ -65,7 +68,7 @@ overall_soundscape: …（环境声与动作声，1–4 句）
 non_diegetic_music: …（1–3 句，没有就 N/A）
 ```
 
-确定性检查的五条：
+确定性检查的七条：
 
 1. **首行对齐指令整行由分镜结构按 `promptLang` 推导**（`h3AlignmentLine`）：多分镜的段把每张分镜图钉在自己的切点秒数上；单分镜的段用固定句式。validate **逐字对账**——分镜秒数一改，旧指令立刻对不上
 2. 三个字段名齐全且按序；描述正文有 `[Shot 1]`
@@ -73,6 +76,7 @@ non_diegetic_music: …（1–3 句，没有就 N/A）
 4. 认领节拍的每句台词**逐字**进 `<d>[Chinese] …</d>`；说话人身份音色语气用英文写在 `<d>` 外；画外音用 `says in an off-screen voiceover` 并注明唇形闭合
 5. `<d>` 块之外的正文语言与 `promptLang` 一致（中文写成英文、英文混进中文都拦）；英文模式禁角色名，中文模式放行（身份靠分镜图锚定）
 6. 每个分镜的运镜词必须出现在自己的 `[Shot k]`；电影化模式下，动态运镜的速度/幅度、转场 token、`cameraPlan` 五个文本字段逐字对账，固定/动态参数匹配，并拦截英文提示词中同切出现多个主运镜
+7. 丰富模式下，`visualPlan` 六层逐字进入本切；`audioPlan.soundscape` 四层逐字进入 overall_soundscape；有配乐时 `audioPlan.music` 四层逐字进入 non_diegetic_music，无配乐明确 N/A/无。英文每项至少 24 字符，中文至少 10 字符
 
 ## 时长约束链
 

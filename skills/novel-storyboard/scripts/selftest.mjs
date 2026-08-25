@@ -14,8 +14,12 @@ import {
   CAMERA_MOVES,
   DEFAULT_PARAMS,
   DEFAULT_STYLE,
+  MUSIC_PLAN_FIELDS,
+  PROMPT_DETAIL_MODE,
+  SOUND_PLAN_FIELDS,
   STYLE_PRESETS,
   TRANSITION_TOKENS,
+  VISUAL_PLAN_FIELDS,
   exportPack,
   H3_I2VA_LINE,
   SHOT_SIZES,
@@ -29,6 +33,7 @@ import {
   h3AlignmentLine,
   h3CutSlices,
   h3CutTime,
+  h3FieldValue,
   h3Remainder,
   loadRecipes,
   parseCardFields,
@@ -95,6 +100,42 @@ const cameraPlanDoc = () => {
   };
 };
 
+const richPromptDoc = () => {
+  const doc = cameraPlanDoc();
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  const seg = doc.episodes[0].segments[0];
+  const visual = {
+    environment: 'A broad muddy riverside path runs between wet reeds and dense morning fog',
+    lighting: 'Cold diffuse dawn light filters through the fog and leaves soft reflections in every puddle',
+    subject: 'A young woman in a plain qipao carries a weathered leather suitcase tightly against her chest',
+    action: 'She runs forward with short urgent strides while keeping both arms locked around the suitcase',
+    effects: 'Mud splashes under each step and the loose hem of her qipao snaps backward with her motion',
+    continuity: 'Her left-to-right movement remains unfinished as her silhouette disappears into the fog',
+  };
+  const soundscape = {
+    baseline: 'Fog-muted river water and a low predawn wind form the quiet environmental baseline',
+    build: 'Rapid footsteps and increasingly sharp puddle splashes rise as the woman approaches',
+    events: 'Wet fabric flutters and the leather suitcase hardware rattles against each running stride',
+    aftermath: 'The footsteps soften into the fog until only river water and distant wind remain',
+  };
+  const music = {
+    mode: 'scored',
+    style: 'A restrained cinematic suspense score at a slow but tightening tempo',
+    instrumentation: 'Low sustained strings, muted frame drum pulses and a distant breathy flute',
+    arc: 'The texture begins near silence, adds pulse with her acceleration and swells without overpowering the scene',
+    sync: 'The phrase holds unresolved as her silhouette vanishes into the fog at the end of the shot',
+  };
+  cut.visualPlan = visual;
+  seg.audioPlan = { soundscape, music };
+  doc.promptDetailMode = PROMPT_DETAIL_MODE;
+  const plan = cut.cameraPlan;
+  seg.h3Prompt = `${H3_I2VA_LINE}\n\nintegrated_multimodal_description:\n` +
+    `[Shot 1] A straight cut enters <Picture 1>. ${plan.start}. ${visual.environment}. ${visual.lighting}. ${visual.subject}. ${visual.action}. Use a slow, subtle Tracking Shot centred on ${plan.target}. ${plan.focus}. ${visual.effects}. End with ${plan.end}. ${visual.continuity}. The intent is to ${plan.intent}.\n\n` +
+    `overall_soundscape: ${soundscape.baseline}. ${soundscape.build}. ${soundscape.events}. ${soundscape.aftermath}.\n\n` +
+    `non_diegetic_music: ${music.style}. ${music.instrumentation}. ${music.arc}. ${music.sync}.`;
+  return doc;
+};
+
 /* ---------------- expandScript ---------------- */
 
 const expanded = expandScript(SCRIPT);
@@ -131,6 +172,11 @@ eq(h3AlignmentLine([{ seconds: 5 }], 'zh'), '目标视频在 0.00 秒处完全�
   const zh = h3CutSlices('整体视听描述：\n[镜头 1] aa\n[镜头 2] bb\n\n整体音景：x', 2, 'zh');
   ok(zh[0].includes('aa') && zh[1].includes('bb'), 'zh 模式按 [镜头 k] 切片');
 }
+{
+  const prompt = 'integrated_multimodal_description: visual\noverall_soundscape: ambience and impact\nnon_diegetic_music: strings and brass';
+  eq(h3FieldValue(prompt, 1), 'ambience and impact', '能提取 overall_soundscape 正文');
+  eq(h3FieldValue(prompt, 2), 'strings and brass', '能提取 non_diegetic_music 正文');
+}
 eq(segSeconds({ cuts: [{ seconds: 3 }, { seconds: 4.5 }] }), 7.5, '段秒数 = 分镜求和');
 
 /* ---------------- computeStats ---------------- */
@@ -153,7 +199,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 17, '十七道门');
+eq(gateReport(FIXTURE, CTX).length, 18, '十八道门');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -414,6 +460,49 @@ eq(h3Remainder('a <d>[Chinese] 你好</d> b "营业中" c'), 'a   b   c', 'h3Rem
   const doc = clone(FIXTURE);
   doc.episodes[0].segments[0].sceneIndex = 9;
   ok(!gate(doc, 'refs').ok, '不存在的场次被拦');
+}
+
+// prompt-detail — 投产级视觉、声景与配乐信息逐字对账
+{
+  const doc = richPromptDoc();
+  ok(gate(doc, 'prompt-detail', {}).ok, '投产级视觉与音频计划完整时通过');
+  eq(VISUAL_PLAN_FIELDS.length, 6, '视觉计划六层');
+  eq(SOUND_PLAN_FIELDS.length, 4, '声景计划四层');
+  eq(MUSIC_PLAN_FIELDS.length, 4, '配乐计划四层');
+}
+{
+  const doc = richPromptDoc();
+  delete doc.episodes[0].segments[0].cuts[0].visualPlan.lighting;
+  ok(!gate(doc, 'prompt-detail', {}).ok, '视觉计划缺光线层被拦');
+}
+{
+  const doc = richPromptDoc();
+  doc.episodes[0].segments[0].cuts[0].visualPlan.action = 'She runs';
+  ok(!gate(doc, 'prompt-detail', {}).ok, '视觉计划字段过短被拦');
+}
+{
+  const doc = richPromptDoc();
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace(cut.visualPlan.effects, 'Mud moves underfoot');
+  ok(!gate(doc, 'prompt-detail', {}).ok, '视觉效果没有逐字进入对应 Shot 被拦');
+}
+{
+  const doc = richPromptDoc();
+  const sound = doc.episodes[0].segments[0].audioPlan.soundscape;
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace(sound.aftermath, 'The sound fades');
+  ok(!gate(doc, 'prompt-detail', {}).ok, '声景余韵没有逐字进入 overall_soundscape 被拦');
+}
+{
+  const doc = richPromptDoc();
+  doc.episodes[0].segments[0].audioPlan.music.mode = 'auto';
+  ok(!gate(doc, 'prompt-detail', {}).ok, '配乐模式不合法被拦');
+}
+{
+  const doc = richPromptDoc();
+  const seg = doc.episodes[0].segments[0];
+  seg.audioPlan.music = { mode: 'none' };
+  seg.h3Prompt = seg.h3Prompt.replace(/non_diegetic_music:[\s\S]*$/, 'non_diegetic_music: N/A');
+  ok(gate(doc, 'prompt-detail', {}).ok, '明确无配乐时 N/A 通过');
 }
 
 // style-phrase — 同剧分镜图画风不许漂
@@ -678,6 +767,7 @@ ok(validateStoryboard({ source: 'x', episodes: [] }).some((p) => p.includes('epi
 const seeded = seedFromScript(SCRIPT);
 eq(seeded.source, '渡口', 'seed 带剧名');
 eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
+eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
 eq(seeded.episodes.length, 6, 'seed 全六集');
 eq(seeded.episodes[0].segments.length, 0, 'segments 留空给模型切');
 eq(seeded.episodes[0].seedScenes.length, 2, '工作底稿带两场');
@@ -716,7 +806,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 17 / 17'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 18 / 18'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
 ok(html.includes('主分镜图 · #1 未生成'), '主分镜图缺图时显示占位不装有');
@@ -781,7 +871,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 17 / 17'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 18 / 18'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
   ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');

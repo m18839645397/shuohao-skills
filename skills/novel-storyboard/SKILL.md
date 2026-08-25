@@ -1,16 +1,17 @@
 ---
 name: novel-storyboard
-version: 1.6.0
+version: 1.7.0
 description: |
   给 AI 短剧出分镜：三层结构——段（一次视频生成，≤15 秒）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
   每段自带一条 MiniMax H3 视频提示词（官方口径默认英文、逐镜换行，promptLang 可切中文）：对齐指令和
   [Shot k] 切点时刻由分镜结构推导、逐字对账，台词逐字进 <d> 块（写法规范已内化为
   references/h3-prompt.md，不依赖外部 skill）；每切带克制电影化 cameraPlan，明确起点、目标、焦点、
-  速度/幅度、结束构图、导演意图与转场。
+  速度/幅度、结束构图、导演意图与转场；投产级丰富模式逐切写空间、光线、主体、动作、效果与连续性，
+  逐段写分层声景和配乐动态。
   产出 storyboard.json + Markdown + 单页评审报告（分镜节奏带 / 分集分镜表 / 生成批次单 /
   配音对齐单，含导出 JSON）。分镜图出图拿场景与角色设定图当参考图走 codex $imagegen（可选）。
-  17 道质量门全部由脚本确定性检查（第 17 道 shot-recipe 可选：挂上 shot-recipes 卡库才查，不挂就明说跳过）；
+  18 道质量门全部由脚本确定性检查（第 18 道 shot-recipe 可选：挂上 shot-recipes 卡库才查，不挂就明说跳过）；
   export 一键导出 H3 投产包（每段提示词 + 按 Picture 序的分镜图清单）。零依赖、零 API key，用当前会话额度。
   Use when asked to 分镜、出分镜、镜头表、切镜、storyboard for AI short drama。
 allowed-tools:
@@ -68,7 +69,7 @@ metadata:
 
 - `--outline` / `--cast`：提示词禁人名检查 + 报告里 C01 显示成人名
 - `--art`：报告里 S01 显示成场景名 + 批次单嵌场景设定图
-- `--shots <卡片目录>`：**可选**挂载 shot-recipes 的镜头配方卡库（指向 `shot-recipes/references/cards`，只接受目录不接受导出的 JSON），开第 17 道 `shot-recipe` 门。没装 shot-recipes 就别给——本 skill 自包含，不依赖它
+- `--shots <卡片目录>`：**可选**挂载 shot-recipes 的镜头配方卡库（指向 `shot-recipes/references/cards`，只接受目录不接受导出的 JSON），开第 18 道 `shot-recipe` 门。没装 shot-recipes 就别给——本 skill 自包含，不依赖它
 
 **一次切几集**：跟剧本的批次走（剧本写到哪就分到哪），默认一批 ≤ 3 集。
 
@@ -78,18 +79,18 @@ metadata:
 node {baseDir}/scripts/novel-storyboard.mjs seed <script.json> --eps 1-3 > <workdir>/storyboard.json
 ```
 
-确定性展开：每场的节拍清单（编号、动作/台词、每拍秒数、说话人）进 `seedScenes`，这就是切镜时的工作底稿；顶层写入 `cameraPlanMode: "cinematic-controlled"`，开启克制电影化运镜门。**每拍几秒是算出来的，不要让模型重新估。** shots 留空，切镜才是模型的活。
+确定性展开：每场的节拍清单（编号、动作/台词、每拍秒数、说话人）进 `seedScenes`，这就是切镜时的工作底稿；顶层写入 `cameraPlanMode: "cinematic-controlled"` 和 `promptDetailMode: "production-rich"`，开启克制电影化运镜与投产级丰富度门。**每拍几秒是算出来的，不要让模型重新估。** shots 留空，切镜才是模型的活。
 
 ### Step 2 — 逐集分段切镜
 
 每集一份任务，能并发就并发。每份任务拿到：
 
-- `{baseDir}/references/storyboard-pass.md`、`{baseDir}/references/camera-direction.md` 和 `{baseDir}/references/schema.md`（读它们，照着做）
+- `{baseDir}/references/storyboard-pass.md`、`{baseDir}/references/camera-direction.md`、`{baseDir}/references/prompt-detail.md` 和 `{baseDir}/references/schema.md`（读它们，照着做）
 - 该集的 seedScenes 底稿 + 场景卡（art.json 的锚点与光照提示词）+ 角色卡（cast.json 的形象要点）
 
-流程：**先按剧情单元分段**（每段 9–15 秒、不跨场），**段内切 2–5 秒的分镜**（对话正反打、关键动作插入特写、进场三件套——切镜语法都在 storyboard-pass.md），每切写一条分镜图提示词，并按 `camera-direction.md` 填 `cameraPlan` 与 `transition`。固定镜头是默认；动态镜头每切只给一个主运镜。
+流程：**先按剧情单元分段**（每段 9–15 秒、不跨场），**段内切 2–5 秒的分镜**（对话正反打、关键动作插入特写、进场三件套——切镜语法都在 storyboard-pass.md），每切写一条分镜图提示词，并按 `camera-direction.md` 填 `cameraPlan` / `transition`，按 `prompt-detail.md` 填 `visualPlan`；每段填 `audioPlan`。固定镜头是默认；动态镜头每切只给一个主运镜。
 
-**每段写一条 `h3Prompt`**，照 `{baseDir}/references/h3-prompt.md` 写（官方方法论的内化版，**不依赖任何外部 skill**）。官方口径默认英文（`promptLang` 可切中文），**每个镜头独立一行**。要点：首行对齐指令和 `[Shot k]` 切点时刻**由分镜秒数推导，一个字符都不许漂**（validate 逐字对账）；认领台词**逐字**进 `<d>[Chinese] …</d>`；每切的运镜词、转场、速度/幅度与 `cameraPlan` 五个 prompt-ready 字段逐字写进自己那一行；声景与配乐分进后两个字段——**声景也是动作指令，画面改了声景一起改**。
+**每段写一条 `h3Prompt`**，照 `{baseDir}/references/h3-prompt.md` 写（官方方法论的内化版，**不依赖任何外部 skill**）。官方口径默认英文（`promptLang` 可切中文），**每个镜头独立一行**。要点：首行对齐指令和 `[Shot k]` 切点时刻**由分镜秒数推导，一个字符都不许漂**（validate 逐字对账）；认领台词**逐字**进 `<d>[Chinese] …</d>`；每切的运镜词、转场、速度/幅度、`cameraPlan` 五个字段和 `visualPlan` 六个字段逐字写进自己那一行；`audioPlan.soundscape` 四层进入声景字段，配乐为 scored 时四层进入配乐字段，明确无配乐写 N/A/无——**声景也是动作指令，画面改了声景一起改**。
 
 切完把 `seedScenes` 删掉。
 
@@ -101,11 +102,11 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
   [--shots </path/to/cards>]
 ```
 
-17 道质量门全是代码：节拍全覆盖（分镜级，恰好一次、按顺序、连续）、段 0 < 总秒 ≤ 15、**每切 2–5 秒**、台词装得进分镜、每集总时长在剧本目标 ±15% 内、同框 ≤ 3 人（超了必须带拆解说明）、段号 E01-01 格式连号、景别短语在分镜图提示词里、**风格短语统一**（`style` 预设 realistic/cinematic/ghibli/inkwash 与角色/场景 skill 同名对齐，同剧分镜图不许画风漂）、运镜用 H3 词表且在自己的 [Shot k] 段落里；电影化模式下 `cameraPlan` 起点/目标/终点/焦点/意图、速度/幅度和转场逐字对账，并拦截同切冲突运镜；**H3 对齐指令由分镜结构推导逐字对账 + 切点时刻逐个对**、**认领台词逐字进 `<d>` 块**、**提示词语言与 promptLang 一致**（双向查：中文写成英文、英文混进中文都拦）、分镜图提示词全英文非空、英文提示词不含角色名（中文 H3 提示词放行）、场次/人物/道具对账剧本、**镜头配方对账**（可选门，见下）。
+18 道质量门全是代码：节拍全覆盖（分镜级，恰好一次、按顺序、连续）、段 0 < 总秒 ≤ 15、**每切 2–5 秒**、台词装得进分镜、每集总时长在剧本目标 ±15% 内、同框 ≤ 3 人（超了必须带拆解说明）、段号 E01-01 格式连号、景别短语在分镜图提示词里、**风格短语统一**（`style` 预设 realistic/cinematic/ghibli/inkwash 与角色/场景 skill 同名对齐，同剧分镜图不许画风漂）、运镜用 H3 词表且在自己的 [Shot k] 段落里；电影化模式下 `cameraPlan` 起点/目标/终点/焦点/意图、速度/幅度和转场逐字对账，并拦截同切冲突运镜；丰富模式下逐切六层视觉信息、逐段四层声景与配乐计划逐字对账并设最低信息量；**H3 对齐指令由分镜结构推导逐字对账 + 切点时刻逐个对**、**认领台词逐字进 `<d>` 块**、**提示词语言与 promptLang 一致**（双向查：中文写成英文、英文混进中文都拦）、分镜图提示词全英文非空、英文提示词不含角色名（中文 H3 提示词放行）、场次/人物/道具对账剧本、**镜头配方对账**（可选门，见下）。
 
 **有违规逐条修，改完重跑，直到通过。**
 
-**第 17 道 `shot-recipe`（可选挂载）**：给了 `--shots` 才查，不给就明说跳过。cut 上可以写一个可选的 `recipe`（配方卡 id，**cut 级不是 segment 级**，**多格配方靠连续同 id 的分镜表达**，不是数组），门查三条——id 在卡库里、卡片的每条 `must_phrases` 出现在该切的 `frame` 里（两边小写化后 `includes`）、卡片 `cuts` 下限 ≥ 2 时连续同 id 的分镜数不得低于该下限。卡片的**建议景别与运镜不设门**，只在报告的「配方」列和 `checkup` 末尾提示偏离：配方是语汇不是法条，可选挂载的东西一旦变严就没人挂。
+**第 18 道 `shot-recipe`（可选挂载）**：给了 `--shots` 才查，不给就明说跳过。cut 上可以写一个可选的 `recipe`（配方卡 id，**cut 级不是 segment 级**，**多格配方靠连续同 id 的分镜表达**，不是数组），门查三条——id 在卡库里、卡片的每条 `must_phrases` 出现在该切的 `frame` 里（两边小写化后 `includes`）、卡片 `cuts` 下限 ≥ 2 时连续同 id 的分镜数不得低于该下限。卡片的**建议景别与运镜不设门**，只在报告的「配方」列和 `checkup` 末尾提示偏离：配方是语汇不是法条，可选挂载的东西一旦变严就没人挂。
 
 ### Step 4 — 出分镜图（可选）
 
@@ -184,7 +185,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-自测不调模型、不花额度。17 道质量门每一道都有击穿用例。改完脚本先跑这个。
+自测不调模型、不花额度。18 道质量门每一道都有击穿用例。改完脚本先跑这个。
 
 ## 自带样例
 

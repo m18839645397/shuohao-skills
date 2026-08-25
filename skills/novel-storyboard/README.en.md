@@ -16,13 +16,14 @@ segment = one video-generation call, ≤ 15s, never crosses scenes
 - **The alignment instruction is derived, not written** — the multi-picture line (`Picture 2 aligns with the 3.00-second mark…`) and every `[Shot k] At 00:0X.XXX` cut time are computed from cut durations, and validate audits them **character for character**: change a duration without updating the prompt and it blocks
 - **Prompts follow the official spec: English by default, one shot per line** — each shot on its own line with its cut time; dialogue, lyrics and on-screen text keep their original language per the official rules (`<d>[Chinese] …</d>` verbatim). `promptLang: 'zh'` switches the whole prompt to Chinese. The writing spec is internalized as `references/h3-prompt.md` — **this skill is self-contained and depends on no external skill**
 - **Every cut carries an executable camera plan** — new seeds enable `cameraPlanMode: "cinematic-controlled"`: start position, pace/magnitude, target, focus, end composition, intent and transition are copied into that cut's own `[Shot k]`; static is the default and each cut gets one primary move
+- **Final prompts carry production-level detail** — `promptDetailMode: "production-rich"` requires environment, lighting, subject, action, effects and continuity per cut, plus four-layer soundscape and scored music style/instrumentation/arc/sync per segment
 - **Frames are asset composition, not invention** — generation feeds the scene / character / prop sheets as references; with codex installed the frames are actually generated (optional)
 
 Outputs `storyboard.json`, a Markdown shot list, and a self-contained `storyboard-report.html`:
 
 ![storyboard-report.html](assets/report.webp)
 
-## Seventeen quality gates, all code
+## Eighteen quality gates, all code
 
 Same stance as the other four skills in this repo: **a checklist the model grades itself on is worthless.**
 
@@ -40,6 +41,7 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | **H3 structure** | the alignment line is **derived from the cut structure and audited verbatim**; three fields in order; every `[Shot k]` cut time equals the running sum of prior cut durations |
 | **H3 dialogue verbatim** | every claimed line appears verbatim inside a `<d>` block — one changed punctuation mark fails |
 | **Prompt language consistency** | prose audited both ways against `promptLang`: Chinese drama written in English fails, English mode mixing Chinese fails |
+| **Production prompt richness** | six visual-plan layers per cut, four soundscape layers per segment and four scored-music layers appear verbatim in the correct H3 fields with language-aware minimum detail; no music is explicit N/A/无 |
 | **Style phrase** | the `style` preset's English phrase (realistic / cinematic / ghibli / inkwash, name-aligned with the character and art skills) must appear in every frame prompt — one drama, one look |
 | Frame-prompt hygiene | English-only, non-empty |
 | No character names | frame prompts always; the H3 prompt only in English mode (Chinese prompts allow names — identity is anchored by the frames). Checked with `--outline` / `--cast`; skipping is **announced** |
@@ -100,7 +102,7 @@ novel-storyboard → storyboard.json (how to shoot: segments, cuts, frames, H3 p
 node scripts/novel-storyboard.mjs seed script.json --eps 1
 node scripts/novel-storyboard.mjs validate sb.json --script script.json --outline outline.json --cast cast.json
 node scripts/novel-storyboard.mjs checkup sb.json --script script.json
-node scripts/novel-storyboard.mjs validate sb.json --script script.json --shots /path/to/cards   # optional: the 17th gate
+node scripts/novel-storyboard.mjs validate sb.json --script script.json --shots /path/to/cards   # optional: the 18th gate
 node scripts/novel-storyboard.mjs render sb.json --html --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en --script script.json --outline outline.json --art art.json > storyboard-report.html   # English report UI
 node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-segment folders: f1..fN.png + prompt.md
@@ -120,7 +122,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-270 assertions — beat expansion, H3 skeleton derivation, controlled cinematic camera plans, stats and batching, gate-defeating cases, recipe-card parsing and mounting, seed, rendering (both report UI languages), export. No model calls, runs in about a second.
+283 assertions — beat expansion, H3 skeleton derivation, controlled cinematic camera plans, production-rich visual/sound/music plans, stats and batching, gate-defeating cases, recipe-card parsing and mounting, seed, rendering (both report UI languages), export. No model calls, runs in about a second.
 
 The bundled example (`examples/渡口-storyboard.json`) is a complete episode-1 storyboard — 10 segments, 34 cuts claiming all 35 script beats at ~3.5s per cut, 119s against a 120s target, 2 generation batches, every segment carrying a fully audited H3 prompt.
 
