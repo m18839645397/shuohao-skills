@@ -14,7 +14,7 @@
 | [**novel-characters**](skills/novel-characters) | 把大纲定下的角色做成角色设定集：人物画像、形象提示词、音色提示词、角色设定图。吃 outline.json 预填角色表，报告语言与出图风格可选 |
 | [**novel-art**](skills/novel-art) | 给 AI 短剧出美术设定集（场景 + 叙事道具）：一致性锚点、光照与状态变体、尺度参照、无人无手白底提示词。吃 outline.json 预填清单，11 道质量门全部脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算，钩子前 3 拍冷开场兑现是门，台词本按角色聚合带音色提示词直接对接 TTS。10 道质量门全部脚本检查 |
-| [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：段（一次生成 ≤15 秒）→ 分镜（2–5 秒硬门）→ 分镜图（主图钉 0.00 秒、子图钉各自切点），MiniMax H3 提示词的对齐指令、切点时刻、电影化运镜、六层视觉信息、分层声景与配乐动态逐字对账；export 一键出投产包。18 道质量门全部脚本检查 |
+| [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：段（一次生成 ≤15 秒）→ 分镜（2–5 秒硬门）→ 分镜图（主图钉 0.00 秒、子图钉各自切点），MiniMax H3 提示词的运镜、丰富度与状态链逐字对账；相邻镜头/连续段动作、光线、声音、轴线不断，export 一键出投产包。19 道质量门全部脚本检查 |
 
 **五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
 
@@ -101,7 +101,7 @@ $novel-storyboard
 输出到 D:\novels\demo\storyboard。
 ```
 
-新 seed 默认启用 `cameraPlanMode: "cinematic-controlled"` 与 `promptDetailMode: "production-rich"`。每切会明确起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场，并补齐空间、光线、主体、动作、效果、连续性六层视觉信息；每段声景按基底→渐强→事件→余韵展开，配乐写类型、配器、动态曲线与同步点。确认第一段后再扩到整集，避免一集 30–40 张图整批返工。
+新 seed 默认启用 `cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"` 与 `continuityMode: "state-linked"`。除了完整运镜、六层视觉、分层声景和配乐动态，相邻 cut 的人物位置/姿势/视线/道具/光效/银幕方向会逐项对账，Shot 2 起明确同一瞬间的动作/光线/声音/轴线桥；同场连续段也有 handoff。确认第一段后再扩到整集，避免一集 30–40 张图整批返工。
 
 完成后导出 H3 投产包：
 

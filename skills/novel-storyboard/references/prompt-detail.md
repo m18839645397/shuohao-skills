@@ -26,6 +26,8 @@
 - `effects`：雾、风、尘、水、衣摆、震动、闪光、碎屑或环境物理反馈；平静场景也要写可见的细微反馈。
 - `continuity`：承接上一切的状态，并明确留给下一切的运动、光线、视线或姿态。
 
+`visualPlan.continuity` 是给视频模型读的自然句；`continuity.md` 的 startState/endState 是给质量门比较的结构化状态。两者都要写：前者负责表达，后者防止相邻镜头各说各话。
+
 六个值都是跟随 `promptLang` 的 prompt-ready 原句，必须逐字进入自己的 `[Shot k]`。英文模式每项至少 24 个字符，中文模式至少 10 个字符，避免退化成 “dark room” / “she moves” 这种标签。
 
 ## 每段 audioPlan

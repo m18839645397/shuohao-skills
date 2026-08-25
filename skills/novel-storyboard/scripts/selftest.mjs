@@ -12,13 +12,18 @@ import {
   CAMERA_PLAN_MODE,
   CAMERA_PLAN_PACES,
   CAMERA_MOVES,
+  CONTINUITY_MODE,
+  CONTINUITY_STATE_FIELDS,
+  CONTINUITY_TOKENS,
   DEFAULT_PARAMS,
   DEFAULT_STYLE,
   MUSIC_PLAN_FIELDS,
+  HANDOFF_KINDS,
   PROMPT_DETAIL_MODE,
   SOUND_PLAN_FIELDS,
   STYLE_PRESETS,
   TRANSITION_TOKENS,
+  TRANSITION_PLAN_FIELDS,
   VISUAL_PLAN_FIELDS,
   exportPack,
   H3_I2VA_LINE,
@@ -136,6 +141,72 @@ const richPromptDoc = () => {
   return doc;
 };
 
+const continuityState = (overrides = {}) => ({
+  location: 'starship bridge centre',
+  subjectPosition: 'captain facing the observation window',
+  bodyPose: 'hands clasped tightly behind her back',
+  gaze: 'fixed on the fleet beyond the glass',
+  propState: 'no handheld prop',
+  lightState: 'blue hyperdrive light at peak intensity',
+  effectState: 'the first bridge tremor reaches her shoulders',
+  screenDirection: 'captain remains oriented away from camera',
+  ...overrides,
+});
+
+const continuityDoc = () => {
+  const boundary = continuityState();
+  const transitionPlan = {
+    cutPoint: 'cut precisely as the first bridge tremor reaches her shoulders',
+    motionCarry: 'the same shoulder jolt continues into the close-up',
+    lightCarry: 'the peak blue-white light remains continuous across the cut',
+    audioCarry: 'the rising hyperdrive whine continues without interruption',
+    axisCarry: 'the camera remains on the same side of the captain screen axis',
+  };
+  const cuts = [
+    {
+      beats: [1, 1], seconds: 3, size: 'medium', camera: 'Static Shot', characters: [], props: [],
+      startState: continuityState({ lightState: 'blue hyperdrive light still rising', effectState: 'the bridge remains stable' }),
+      endState: clone(boundary), frame: 'medium shot, cinematic film still',
+    },
+    {
+      beats: [2, 2], seconds: 3, size: 'close', camera: 'Shake Strongly', characters: [], props: [],
+      startState: clone(boundary),
+      endState: continuityState({ bodyPose: 'shoulders tense as she braces against the jolt', gaze: 'eyes close after the fleet disappears', lightState: 'the blue-white flash fades into dim purple starlight', effectState: 'the bridge tremor decays' }),
+      transitionPlan, frame: 'close-up, cinematic film still',
+    },
+  ];
+  return {
+    source: '连续性测试', continuityMode: CONTINUITY_MODE, promptLang: 'en',
+    episodes: [{ ep: 1, segments: [{
+      id: 'E01-01', sceneIndex: 1, handoff: { kind: 'episode-start' }, cuts,
+      h3Prompt: `${h3AlignmentLine(cuts)}\n\nintegrated_multimodal_description:\n` +
+        '[Shot 1] A static view establishes the captain as the bridge begins to tremble.\n' +
+        `[Shot 2] At 00:03.000, ${CONTINUITY_TOKENS.en.cut(1)}. ${transitionPlan.cutPoint}. ${transitionPlan.motionCarry}. ${transitionPlan.lightCarry}. ${transitionPlan.axisCarry}.\n\n` +
+        `overall_soundscape: ${transitionPlan.audioCarry}.\n\nnon_diegetic_music: N/A.`,
+    }] }],
+  };
+};
+
+const segmentHandoffDoc = (kind = 'continuous') => {
+  const boundary = continuityState();
+  const handoff = {
+    kind,
+    fromSegment: 'E01-01',
+    visualCarry: 'the same captain posture and peak blue-white light continue into the next segment',
+    motionCarry: 'the shoulder jolt continues from the previous segment without resetting',
+    audioCarry: 'the hyperdrive whine crosses the segment boundary without a break',
+  };
+  const firstCut = { beats: [1, 1], seconds: 3, size: 'medium', camera: 'Static Shot', characters: [], props: [], startState: continuityState({ lightState: 'blue hyperdrive light rising', effectState: 'bridge stable' }), endState: clone(boundary), frame: 'medium shot' };
+  const secondCut = { beats: [2, 2], seconds: 3, size: 'close', camera: 'Static Shot', characters: [], props: [], startState: clone(boundary), endState: continuityState({ effectState: 'the bridge tremor strengthens' }), frame: 'close-up' };
+  return {
+    source: '段间连续性测试', continuityMode: CONTINUITY_MODE, promptLang: 'en',
+    episodes: [{ ep: 1, segments: [
+      { id: 'E01-01', sceneIndex: 1, handoff: { kind: 'episode-start' }, cuts: [firstCut], h3Prompt: `${H3_I2VA_LINE}\n\nintegrated_multimodal_description:\n[Shot 1] The captain holds position.\n\noverall_soundscape: A rising whine.\n\nnon_diegetic_music: N/A.` },
+      { id: 'E01-02', sceneIndex: kind === 'continuous' ? 1 : 2, handoff, cuts: [secondCut], h3Prompt: `${H3_I2VA_LINE}\n\nintegrated_multimodal_description:\n[Shot 1] ${CONTINUITY_TOKENS.en.segment('E01-01')}. ${handoff.visualCarry}. ${handoff.motionCarry}.\n\noverall_soundscape: ${handoff.audioCarry}.\n\nnon_diegetic_music: N/A.` },
+    ] }],
+  };
+};
+
 /* ---------------- expandScript ---------------- */
 
 const expanded = expandScript(SCRIPT);
@@ -199,7 +270,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 18, '十八道门');
+eq(gateReport(FIXTURE, CTX).length, 19, '十九道门');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -371,6 +442,50 @@ eq(gateReport(FIXTURE, CTX).length, 18, '十八道门');
   doc.episodes[0].segments[0].cuts[0].transition = 'whip-pan';
   ok(!gate(doc, 'camera-phrase', {}).ok, '转场不在允许列表被拦');
 }
+// continuity — 相邻 cut 状态链与连续 segment handoff
+{
+  const doc = continuityDoc();
+  ok(gate(doc, 'continuity', {}).ok, '相邻 cut 状态链与转场桥完整时通过');
+  eq(CONTINUITY_STATE_FIELDS.length, 8, '连续状态八项');
+  eq(TRANSITION_PLAN_FIELDS.length, 5, '镜间转场桥五项');
+  ok(HANDOFF_KINDS.includes('continuous') && HANDOFF_KINDS.includes('scene-change'), '段间交接类型齐全');
+}
+{
+  const doc = continuityDoc();
+  doc.episodes[0].segments[0].cuts[1].startState.bodyPose = 'arms lowered at her sides';
+  ok(!gate(doc, 'continuity', {}).ok, '上一切末态与下一切首态不一致被拦');
+}
+{
+  const doc = continuityDoc();
+  delete doc.episodes[0].segments[0].cuts[1].transitionPlan;
+  ok(!gate(doc, 'continuity', {}).ok, 'Shot 2 缺 transitionPlan 被拦');
+}
+{
+  const doc = continuityDoc();
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace(CONTINUITY_TOKENS.en.cut(1), 'the next shot begins');
+  ok(!gate(doc, 'continuity', {}).ok, 'Shot 2 缺同一瞬间承接句被拦');
+}
+{
+  const doc = continuityDoc();
+  const audio = doc.episodes[0].segments[0].cuts[1].transitionPlan.audioCarry;
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace(audio, 'the sound continues');
+  ok(!gate(doc, 'continuity', {}).ok, '跨切声音桥没有进入声景被拦');
+}
+{
+  const doc = segmentHandoffDoc();
+  ok(gate(doc, 'continuity', {}).ok, '同场连续 segment 状态与 handoff 完整时通过');
+}
+{
+  const doc = segmentHandoffDoc();
+  doc.episodes[0].segments[1].cuts[0].startState.lightState = 'dim purple starlight after the jump';
+  ok(!gate(doc, 'continuity', {}).ok, '连续 segment 末态与首态不一致被拦');
+}
+{
+  const doc = segmentHandoffDoc('scene-change');
+  doc.episodes[0].segments[1].cuts[0].startState = continuityState({ location: 'fleet command chamber', lightState: 'warm amber command lights', effectState: 'room remains stable' });
+  ok(gate(doc, 'continuity', {}).ok, '明确 scene-change 后允许状态断开');
+}
+
 // h3-structure — 对齐指令由分镜结构推导，逐字对账
 {
   const doc = clone(FIXTURE);
@@ -768,6 +883,7 @@ const seeded = seedFromScript(SCRIPT);
 eq(seeded.source, '渡口', 'seed 带剧名');
 eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
 eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
+eq(seeded.continuityMode, CONTINUITY_MODE, 'seed 默认开启状态链连续性');
 eq(seeded.episodes.length, 6, 'seed 全六集');
 eq(seeded.episodes[0].segments.length, 0, 'segments 留空给模型切');
 eq(seeded.episodes[0].seedScenes.length, 2, '工作底稿带两场');
@@ -806,7 +922,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 18 / 18'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 19 / 19'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
 ok(html.includes('主分镜图 · #1 未生成'), '主分镜图缺图时显示占位不装有');
@@ -871,7 +987,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 18 / 18'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 19 / 19'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
   ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');

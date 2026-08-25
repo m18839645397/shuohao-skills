@@ -1,6 +1,6 @@
 # H3 视频提示词 · 写法规范（内化版）
 
-方法论学自 MiniMax-H3 官方提示词指南（I2VA / 多图对齐模式），**内化成本 skill 自带文档——不依赖任何外部 skill**。写每段的 `h3Prompt` 照这份做；先读 `camera-direction.md` 和 `prompt-detail.md`，结构与投产信息都有质量门逐字对账。
+方法论学自 MiniMax-H3 官方提示词指南（I2VA / 多图对齐模式），**内化成本 skill 自带文档——不依赖任何外部 skill**。写每段的 `h3Prompt` 照这份做；先读 `camera-direction.md`、`prompt-detail.md` 和 `continuity.md`，结构、投产信息与镜间状态都有质量门逐字对账。
 
 ## 语言分工
 
@@ -16,7 +16,7 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 
 integrated_multimodal_description:
 [Shot 1] Cinematic, live-action, cold gray-green palette. 按 <Picture 1> 锚定构图，依次写 visualPlan 的空间、光线、主体、动作，cameraPlan 的运镜执行，再写效果、结束状态、连续性、导演意图和台词（全英文）。
-[Shot 2] At 00:03.000, the camera cuts to <Picture 2>: ……（**每个镜头独立一行**，切点时刻开头，等于前面分镜秒数的累计）
+[Shot 2] At 00:03.000, continue directly from Shot 1 at the same instant, then anchor <Picture 2>: ……（**每个镜头独立一行**；先承接上一镜的状态和动作桥，再改变景别/机位）
 
 overall_soundscape: audioPlan.soundscape 的基底、渐强、事件、余韵四层。不复述台词。
 
@@ -53,3 +53,11 @@ non_diegetic_music: 有配乐时写 audioPlan.music 的类型、配器、动态�
 - 主分镜图（f1）钉 0.00 秒，是这一段世界观的完全参照；每个 `[Shot k]` 先锚定 `<Picture k>` 的构图与人物状态，再写动作展开
 - 动作遵守 novel-script 的**常见动作原则**：挑担上船、搭手卸担这类模型见过千万次的动作；精确物理交互、微表情不要写
 - 人物**此刻的位置状态**（已上船 / 在舱内）要和分镜图一致——图与文对不上，模型听图的，动作就乱
+- f2 起关键帧生成必须同时挂标准资产、本段 f1 和立即上一切；连续段的下一段 f1 还要挂上一段最后一帧。具体调用见 `frame.md` 和 `continuity.md`。
+
+## 连续性
+
+- 新 seed 默认 `continuityMode: "state-linked"`。
+- 相邻 cut 的 `endState` 与 `startState` 八项逐字相等；Shot 2 起填 `transitionPlan`，明确切点、动作、光线、声音和轴线怎样跨切。
+- Shot 2 起必须含 `continue directly from Shot k at the same instant`；中文使用「在同一时刻直接承接镜头 k」。转场桥的视觉字段进入当前 Shot，audioCarry 进入 overall_soundscape。
+- 同场连续 segment 用 `handoff.kind=continuous`，段首写 `continue directly from segment E01-01 at the same instant`；换场/时间跳跃分别标记 `scene-change` / `time-jump`。

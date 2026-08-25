@@ -2,6 +2,8 @@
 
 本规则用于 `cameraPlanMode: "cinematic-controlled"`。目标不是增加炫技运镜，而是让每切都能回答：镜头从哪里开始、朝什么移动、为什么移动、最后停在哪里，以及怎样接入这一切。
 
+`cameraPlan` 管本切内部怎么拍；相邻切点的动作、光线、声音和轴线承接由 `continuity.md` 的 startState/endState 与 transitionPlan 负责，不要把两层混在一起。
+
 ## 默认策略
 
 - 一切只用一个 `camera` 主运镜；`Static Shot` 是默认。

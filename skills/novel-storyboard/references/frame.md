@@ -13,11 +13,14 @@
 1. **场景设定图**（`novel-art` 的 `images/<场景名>-sheet.png`）——必挂，环境、材质、光的唯一标准
 2. **画内每个角色的设定图**（`novel-characters` 的 `images/<角色名>-sheet.png`）——有几个挂几个
 3. **画内叙事道具的设定图**（`novel-art` 的 `images/<道具名>-sheet.png`）——有就挂
-4. **链式参考**：某角色没有设定图时，先出他看得最清的那一格，之后所有带他的格都拿这张当身份参考（提示词明写 the SAME face, same clothes as this reference）——同集的脸不许换人。段的主分镜图也值得一直挂着，锁世界观和雾的浓度
+4. **链式参考是硬要求**：f2 起始终挂本段 f1 + 立即上一切；标准场景/角色/道具资产继续全部挂上。f1 锁世界观和光线，上一切锁姿势、动作阶段、道具、闪光/雾/震动状态，标准资产防止错误沿链漂移
 5. **挂图按「画面里有什么」，不按「段属于哪个场」**：段在栈桥场，但画面里出现了渡船，就必须把渡船的设定图也挂上——不挂 = 每帧发明一条新船（踩过）。船、马车、宅门这类「会入画的大资产」都同理
 6. **提示词必须写明人物此刻的位置状态**：已上船 / 在舱内 / 站在桥头——切镜时人物位置是连续的剧情状态，只写构图不写状态，模型会把上了船的人又画回岸上（踩过）
+7. **连续段的 f1 挂上一段最后一帧**：`handoff.kind=continuous` 时，下一段 f1 除标准资产外必须挂上一段最后一张分镜图；`scene-change` / `time-jump` 不挂
 
 提示词开头明说每张参考图的用途（which is the environment / whose face to match / which prop to match），别让模型猜。
+
+f2 起固定追加：`Preserve the exact subject pose, position, screen direction, prop state, light level and physical event from the previous-cut reference. Continue from the same instant; change only the shot size and camera composition required by this frame.` 连续段 f1 把 `previous-cut` 改成 `previous-segment final-frame`。
 
 ## 调用契约
 

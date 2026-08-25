@@ -78,6 +78,25 @@ export const PROMPT_DETAIL_MODE = 'production-rich';
 export const VISUAL_PLAN_FIELDS = ['environment', 'lighting', 'subject', 'action', 'effects', 'continuity'];
 export const SOUND_PLAN_FIELDS = ['baseline', 'build', 'events', 'aftermath'];
 export const MUSIC_PLAN_FIELDS = ['style', 'instrumentation', 'arc', 'sync'];
+/** 镜头连续性：状态链 + 切内动作桥 + 段间交接；新 seed 默认开启。 */
+export const CONTINUITY_MODE = 'state-linked';
+export const CONTINUITY_STATE_FIELDS = [
+  'location', 'subjectPosition', 'bodyPose', 'gaze',
+  'propState', 'lightState', 'effectState', 'screenDirection',
+];
+export const TRANSITION_PLAN_FIELDS = ['cutPoint', 'motionCarry', 'lightCarry', 'audioCarry', 'axisCarry'];
+export const HANDOFF_FIELDS = ['visualCarry', 'motionCarry', 'audioCarry'];
+export const HANDOFF_KINDS = ['episode-start', 'continuous', 'scene-change', 'time-jump'];
+export const CONTINUITY_TOKENS = {
+  en: {
+    cut: (k) => `continue directly from Shot ${k} at the same instant`,
+    segment: (id) => `continue directly from segment ${id} at the same instant`,
+  },
+  zh: {
+    cut: (k) => `在同一时刻直接承接镜头 ${k}`,
+    segment: (id) => `在同一时刻直接承接段 ${id}`,
+  },
+};
 export const TRANSITION_TOKENS = {
   'straight-cut': { en: 'straight cut', zh: '直接切入' },
   'cut-on-action': { en: 'cut-on-action', zh: '动作中切入' },
@@ -468,7 +487,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], continuity: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -513,6 +532,31 @@ export function gateReport(board, ctx = {}) {
     }
     return ready;
   };
+  const continuityRequired = board?.continuityMode === CONTINUITY_MODE;
+  if (board?.continuityMode && !continuityRequired) {
+    bad.continuity.push(`continuityMode「${board.continuityMode}」不支持，应为「${CONTINUITY_MODE}」`);
+  }
+  const validateState = (state, owner) => {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) {
+      bad.continuity.push(`${owner} 缺状态对象`);
+      return false;
+    }
+    let ok = true;
+    for (const field of CONTINUITY_STATE_FIELDS) {
+      if (!hasText(state[field])) {
+        bad.continuity.push(`${owner}.${field} 为空`);
+        ok = false;
+      }
+    }
+    return ok;
+  };
+  const compareStates = (from, to, owner) => {
+    for (const field of CONTINUITY_STATE_FIELDS) {
+      if (hasText(from?.[field]) && hasText(to?.[field]) && from[field] !== to[field]) {
+        bad.continuity.push(`${owner} 的 ${field} 不连续：「${from[field]}」→「${to[field]}」`);
+      }
+    }
+  };
 
   // 提示词禁人名：outline 的名字 + cast 的名字与别名
   const banned = [];
@@ -534,7 +578,10 @@ export function gateReport(board, ctx = {}) {
     });
 
     let prevSceneIndex = 0;
-    for (const seg of ep?.segments ?? []) {
+    const episodeSegments = ep?.segments ?? [];
+    for (let segIndex = 0; segIndex < episodeSegments.length; segIndex++) {
+      const seg = episodeSegments[segIndex];
+      const prevSeg = segIndex > 0 ? episodeSegments[segIndex - 1] : null;
       const sid = seg?.id ?? '?';
       const cuts = seg?.cuts ?? [];
       const total = segSeconds(seg);
@@ -574,14 +621,14 @@ export function gateReport(board, ctx = {}) {
       }
 
       const slices = h3CutSlices(h3, cuts.length, promptLang);
+      const soundscapeText = h3FieldValue(h3, 1, promptLang);
+      const musicText = h3FieldValue(h3, 2, promptLang);
       if (promptDetailRequired) {
         const audio = seg?.audioPlan;
-        const soundscape = h3FieldValue(h3, 1, promptLang);
-        const musicText = h3FieldValue(h3, 2, promptLang);
         if (!audio || typeof audio !== 'object' || Array.isArray(audio)) {
           bad.promptDetail.push(`${sid} 缺 audioPlan`);
         } else {
-          checkPromptFields(audio.soundscape, SOUND_PLAN_FIELDS, `${sid}.audioPlan.soundscape`, soundscape);
+          checkPromptFields(audio.soundscape, SOUND_PLAN_FIELDS, `${sid}.audioPlan.soundscape`, soundscapeText);
           const music = audio.music;
           if (!music || typeof music !== 'object' || Array.isArray(music)) {
             bad.promptDetail.push(`${sid}.audioPlan 缺 music`);
@@ -592,6 +639,52 @@ export function gateReport(board, ctx = {}) {
             checkPromptFields(music, MUSIC_PLAN_FIELDS, `${sid}.audioPlan.music`, musicText);
           } else {
             bad.promptDetail.push(`${sid}.audioPlan.music.mode「${music.mode}」必须是 scored 或 none`);
+          }
+        }
+      }
+      if (continuityRequired) {
+        const handoff = seg?.handoff;
+        if (!handoff || typeof handoff !== 'object' || Array.isArray(handoff)) {
+          bad.continuity.push(`${sid} 缺 handoff`);
+        } else if (!HANDOFF_KINDS.includes(handoff.kind)) {
+          bad.continuity.push(`${sid}.handoff.kind「${handoff.kind}」不合法`);
+        } else if (segIndex === 0) {
+          if (handoff.kind !== 'episode-start') bad.continuity.push(`${sid} 是本集第一段，handoff.kind 必须是 episode-start`);
+        } else {
+          if (handoff.fromSegment !== prevSeg?.id) {
+            bad.continuity.push(`${sid}.handoff.fromSegment 应为「${prevSeg?.id}」，实际「${handoff.fromSegment}」`);
+          }
+          if (handoff.kind === 'episode-start') bad.continuity.push(`${sid} 不是本集第一段，不能使用 episode-start`);
+          if (handoff.kind === 'continuous') {
+            if (prevSeg?.sceneIndex !== seg?.sceneIndex) {
+              bad.continuity.push(`${sid} 标记 continuous，却从场 ${prevSeg?.sceneIndex} 切到场 ${seg?.sceneIndex}`);
+            }
+            const prevCut = prevSeg?.cuts?.[prevSeg.cuts.length - 1];
+            const firstCut = cuts[0];
+            compareStates(prevCut?.endState, firstCut?.startState, `${prevSeg?.id} → ${sid}`);
+            for (const field of HANDOFF_FIELDS) {
+              if (!hasText(handoff[field])) bad.continuity.push(`${sid}.handoff.${field} 为空`);
+            }
+            const firstSlice = slices[0];
+            if (firstSlice != null) {
+              const haystack = promptLang === 'en' ? firstSlice.toLowerCase() : firstSlice;
+              const token = CONTINUITY_TOKENS[promptLang === 'en' ? 'en' : 'zh'].segment(prevSeg.id);
+              const needle = promptLang === 'en' ? token.toLowerCase() : token;
+              if (!haystack.includes(needle)) bad.continuity.push(`${sid} 的 [Shot 1] 缺段间承接句「${token}」`);
+              for (const field of ['visualCarry', 'motionCarry']) {
+                if (hasText(handoff[field])) {
+                  const value = handoff[field].trim();
+                  const part = promptLang === 'en' ? value.toLowerCase() : value;
+                  if (!haystack.includes(part)) bad.continuity.push(`${sid}.handoff.${field} 没有逐字进入 [Shot 1]`);
+                }
+              }
+            }
+            if (hasText(handoff.audioCarry)) {
+              const haystack = promptLang === 'en' ? soundscapeText.toLowerCase() : soundscapeText;
+              const value = handoff.audioCarry.trim();
+              const needle = promptLang === 'en' ? value.toLowerCase() : value;
+              if (!haystack.includes(needle)) bad.continuity.push(`${sid}.handoff.audioCarry 没有逐字进入 overall_soundscape`);
+            }
           }
         }
       }
@@ -700,6 +793,42 @@ export function gateReport(board, ctx = {}) {
         }
         if (promptDetailRequired) {
           checkPromptFields(cut?.visualPlan, VISUAL_PLAN_FIELDS, `${cid}.visualPlan`, slices[ci]);
+        }
+        if (continuityRequired) {
+          validateState(cut?.startState, `${cid}.startState`);
+          validateState(cut?.endState, `${cid}.endState`);
+          if (ci > 0) {
+            const prevCut = cuts[ci - 1];
+            compareStates(prevCut?.endState, cut?.startState, `${sid}#${ci} → ${cid}`);
+            const plan = cut?.transitionPlan;
+            if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+              bad.continuity.push(`${cid} 缺 transitionPlan`);
+            } else {
+              for (const field of TRANSITION_PLAN_FIELDS) {
+                if (!hasText(plan[field])) bad.continuity.push(`${cid}.transitionPlan.${field} 为空`);
+              }
+              const slice = slices[ci];
+              if (slice != null) {
+                const haystack = promptLang === 'en' ? slice.toLowerCase() : slice;
+                const token = CONTINUITY_TOKENS[promptLang === 'en' ? 'en' : 'zh'].cut(ci);
+                const needle = promptLang === 'en' ? token.toLowerCase() : token;
+                if (!haystack.includes(needle)) bad.continuity.push(`${cid} 缺镜间承接句「${token}」`);
+                for (const field of ['cutPoint', 'motionCarry', 'lightCarry', 'axisCarry']) {
+                  if (hasText(plan[field])) {
+                    const value = plan[field].trim();
+                    const part = promptLang === 'en' ? value.toLowerCase() : value;
+                    if (!haystack.includes(part)) bad.continuity.push(`${cid}.transitionPlan.${field} 没有逐字进入自己的 [Shot ${ci + 1}]`);
+                  }
+                }
+              }
+              if (hasText(plan.audioCarry)) {
+                const haystack = promptLang === 'en' ? soundscapeText.toLowerCase() : soundscapeText;
+                const value = plan.audioCarry.trim();
+                const needle = promptLang === 'en' ? value.toLowerCase() : value;
+                if (!haystack.includes(needle)) bad.continuity.push(`${cid}.transitionPlan.audioCarry 没有逐字进入 overall_soundscape`);
+              }
+            }
+          }
         }
         const frame = String(cut?.frame ?? '');
         if (!frame.trim()) bad.english.push(`${cid} 的分镜图提示词为空`);
@@ -835,6 +964,12 @@ export function gateReport(board, ctx = {}) {
     cameraProblems.length === 0,
     cameraProblems.length ? cameraProblems.join('；') : cameraPlanRequired ? '' : `未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`,
   );
+  add(
+    'continuity',
+    '相邻 cut 状态链一致、动作／光线／声音／轴线有桥；连续 segment 有可对账 handoff',
+    bad.continuity.length === 0,
+    bad.continuity.length ? bad.continuity.join('；') : continuityRequired ? '' : `未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`,
+  );
   add('h3-structure', 'H3 首行对齐指令由分镜结构推导逐字对账，切点时刻逐个对', eps.length > 0 && bad.h3s.length === 0, bad.h3s.join('；'));
   add('h3-dialogue', '认领节拍的台词逐字进 H3 提示词的 <d> 块', bad.h3d.length === 0, script ? bad.h3d.join('；') : SKIP_SCRIPT);
   add('h3-lang', `H3 提示词语言与设定一致（promptLang=${promptLang}，正文${promptLang === 'en' ? '全英文' : '中文'}、骨架 token 官方英文格式）`, bad.h3e.length === 0, bad.h3e.join('；'));
@@ -942,6 +1077,7 @@ export function seedFromScript(script, epRange = null) {
     source: script?.source ?? '',
     cameraPlanMode: CAMERA_PLAN_MODE,
     promptDetailMode: PROMPT_DETAIL_MODE,
+    continuityMode: CONTINUITY_MODE,
     episodes,
   };
 }
@@ -1023,6 +1159,7 @@ const GATE_LABELS_EN = {
   'segment-id': 'Segment IDs in E01-01 format, sequential',
   'size-phrase': 'Shot-size phrase present in the frame prompt',
   'camera-phrase': 'Official H3 camera move; in cinematic mode, the complete camera plan and transition appear inside their own [Shot k]',
+  'continuity': 'Adjacent cuts share an exact state boundary and motion/light/audio/axis bridge; continuous segments carry an audited handoff',
   'h3-structure': 'H3 alignment line derived from the cut structure, audited verbatim; cut times match',
   'h3-dialogue': 'Claimed dialogue appears verbatim inside the H3 <d> blocks',
   'h3-lang': 'Prompt language matches the promptLang setting',
@@ -1043,6 +1180,7 @@ const GATE_SKIPS_EN = {
     '本批分镜没有引用配方': 'no cut in this batch references a recipe',
     [`未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`]: `cameraPlanMode=${CAMERA_PLAN_MODE} not enabled — execution-plan checks skipped`,
     [`未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`]: `promptDetailMode=${PROMPT_DETAIL_MODE} not enabled — richness checks skipped`,
+    [`未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`]: `continuityMode=${CONTINUITY_MODE} not enabled — continuity checks skipped`,
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {
