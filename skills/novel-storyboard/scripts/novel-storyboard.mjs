@@ -85,6 +85,14 @@ export const FRAME_ROLES = ['establishing', 'dialogue', 'reaction', 'action', 'r
 export const FRAME_DENSITIES = ['sparse', 'balanced', 'rich'];
 export const FRAME_PLAN_TEXT_FIELDS = ['keyMoment', 'composition', 'atmosphere'];
 export const FRAME_PLAN_ARRAY_FIELDS = ['foreground', 'background', 'storyCues', 'exclude'];
+/** 段首 f1 的时间语义：必须展示动作前入口态，动作只在 0.00 秒之后发生。 */
+export const FRAME_ENTRY_MODE = 'start-boundary';
+export const FRAME_MOMENTS = ['entry', 'transition', 'impact', 'result'];
+export const FRAME_ENTRY_FIELDS = ['position', 'pose', 'gaze', 'prop', 'effect'];
+export const FRAME_ENTRY_TOKENS = {
+  en: 'motion begins only after the 0.00-second entry frame',
+  zh: '动作仅在 0.00 秒入口帧之后开始',
+};
 /** 镜头连续性：状态链 + 切内动作桥 + 段间交接；新 seed 默认开启。 */
 export const CONTINUITY_MODE = 'state-linked';
 export const CONTINUITY_STATE_FIELDS = [
@@ -149,6 +157,17 @@ export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = f
     lines.push('Match every narrative prop exactly to the attached prop reference images.');
   }
   lines.push(FRAME_DENSITY_INSTRUCTIONS[plan.density] ?? 'Keep the composition narratively clear and controlled.');
+  if (plan.moment === 'entry') {
+    lines.push('This is the exact action-entry state at 0.00 seconds; motion begins only after this still frame.');
+    const entry = plan.entryStatePrompt;
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      if (hasText(entry.position)) lines.push(`Entry position: ${entry.position.trim()}.`);
+      if (hasText(entry.pose)) lines.push(`Entry pose: ${entry.pose.trim()}.`);
+      if (hasText(entry.gaze)) lines.push(`Entry gaze: ${entry.gaze.trim()}.`);
+      if (hasText(entry.prop)) lines.push(`Entry prop state: ${entry.prop.trim()}.`);
+      if (hasText(entry.effect)) lines.push(`Entry effect state: ${entry.effect.trim()}.`);
+    }
+  }
   if (base) lines.push(base);
   if (hasText(plan.keyMoment)) lines.push(`Keyframe moment: ${plan.keyMoment.trim()}.`);
   if (hasText(plan.composition)) lines.push(`Composition: ${plan.composition.trim()}.`);
@@ -606,7 +625,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], framePlan: [], continuity: [], scriptState: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], framePlan: [], frameEntry: [], continuity: [], scriptState: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -627,6 +646,10 @@ export function gateReport(board, ctx = {}) {
   const framePlanRequired = board?.framePlanMode === FRAME_PLAN_MODE;
   if (board?.framePlanMode && !framePlanRequired) {
     bad.framePlan.push(`framePlanMode「${board.framePlanMode}」不支持，应为「${FRAME_PLAN_MODE}」`);
+  }
+  const frameEntryRequired = board?.frameEntryMode === FRAME_ENTRY_MODE;
+  if (board?.frameEntryMode && !frameEntryRequired) {
+    bad.frameEntry.push(`frameEntryMode「${board.frameEntryMode}」不支持，应为「${FRAME_ENTRY_MODE}」`);
   }
   const detailMinChars = promptLang === 'en' ? 24 : 10;
   const checkPromptFields = (obj, fields, owner, text) => {
@@ -747,6 +770,18 @@ export function gateReport(board, ctx = {}) {
       const slices = h3CutSlices(h3, cuts.length, promptLang);
       const soundscapeText = h3FieldValue(h3, 1, promptLang);
       const musicText = h3FieldValue(h3, 2, promptLang);
+      if (frameEntryRequired) {
+        const firstSlice = slices[0];
+        const token = FRAME_ENTRY_TOKENS[promptLang === 'zh' ? 'zh' : 'en'];
+        const haystack = promptLang === 'en' ? String(firstSlice ?? '').toLowerCase() : String(firstSlice ?? '');
+        const needle = promptLang === 'en' ? token.toLowerCase() : token;
+        const tokenAt = haystack.indexOf(needle);
+        if (tokenAt < 0) {
+          bad.frameEntry.push(`${sid} 的 [Shot 1] 缺「${token}」——动作必须从 0.00 秒入口帧之后开始`);
+        } else if (tokenAt > 240) {
+          bad.frameEntry.push(`${sid} 的 [Shot 1] 把入口帧起动边界写得太晚；必须在前 240 字符内先声明「${token}」`);
+        }
+      }
       if (promptDetailRequired) {
         const audio = seg?.audioPlan;
         if (!audio || typeof audio !== 'object' || Array.isArray(audio)) {
@@ -986,6 +1021,44 @@ export function gateReport(board, ctx = {}) {
             }
           }
         }
+        if (frameEntryRequired) {
+          const plan = cut?.framePlan;
+          if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+            bad.frameEntry.push(`${cid} 缺 framePlan，无法建立入口帧`);
+          } else {
+            if (!FRAME_MOMENTS.includes(plan.moment)) {
+              bad.frameEntry.push(`${cid}.framePlan.moment「${plan.moment}」不合法（${FRAME_MOMENTS.join(' / ')}）`);
+            }
+            if (ci === 0) {
+              if (plan.moment !== 'entry') {
+                bad.frameEntry.push(`${cid} 是段首 f1，framePlan.moment 必须是 entry，不能从 ${plan.moment ?? '空值'} 开始`);
+              }
+              const entry = plan.entryStatePrompt;
+              if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+                bad.frameEntry.push(`${cid} 缺 framePlan.entryStatePrompt`);
+              } else {
+                for (const field of FRAME_ENTRY_FIELDS) {
+                  const value = hasText(entry[field]) ? entry[field].trim() : '';
+                  if (!value) bad.frameEntry.push(`${cid}.framePlan.entryStatePrompt.${field} 为空`);
+                  else {
+                    if (value.length < 12) bad.frameEntry.push(`${cid}.framePlan.entryStatePrompt.${field} 太短（至少 12 个英文字符）`);
+                    if (CJK.test(value)) bad.frameEntry.push(`${cid}.framePlan.entryStatePrompt.${field} 必须英文`);
+                  }
+                }
+              }
+              const keyMoment = String(plan.keyMoment ?? '');
+              const baseFrame = String(cut?.frame ?? '');
+              const resultState = /\b(?:has|have)\s+(?:just\s+|already\s+)?(?:struck|slammed|turned|landed|stopped|opened|closed|finished|completed|reached)\b|\balready\s+(?:running|turned|seated|open|closed)\b|\b(?:caught\s+)?mid-(?:stride|run|turn|swing|action)\b/i;
+              const activeSubject = /\b(?:man|woman|boy|girl|subject|figure|captain|person|traveller)\b[^.!]{0,80}\b(?:running|sprinting|striking|slamming|turning|jumping|falling)\b/i;
+              if (resultState.test(keyMoment) || resultState.test(baseFrame) || activeSubject.test(baseFrame)) {
+                bad.frameEntry.push(`${cid} 的段首 f1 描述了动作中段或结果；必须改成动作发生前的 entry state`);
+              }
+              if (!/\b(?:before|poised|ready|at rest|remains|holds|stands|sits|waits|prepares|about to)\b/i.test(keyMoment)) {
+                bad.frameEntry.push(`${cid}.framePlan.keyMoment 缺动作入口语义（before／poised／ready／remains／holds／stands／sits／waits／prepares／about to）`);
+              }
+            }
+          }
+        }
         if (continuityRequired) {
           validateState(cut?.startState, `${cid}.startState`);
           validateState(cut?.endState, `${cid}.endState`);
@@ -1204,6 +1277,12 @@ export function gateReport(board, ctx = {}) {
     bad.framePlan.length === 0,
     bad.framePlan.length ? bad.framePlan.join('；') : framePlanRequired ? '' : `未启用 framePlanMode=${FRAME_PLAN_MODE}，分镜图密度检查跳过`,
   );
+  add(
+    'frame-entry-state',
+    '每段 f1 是动作前 entry state，人物／姿态／视线／道具／效果完整，动作仅在 0.00 秒后开始',
+    bad.frameEntry.length === 0,
+    bad.frameEntry.length ? bad.frameEntry.join('；') : frameEntryRequired ? '' : `未启用 frameEntryMode=${FRAME_ENTRY_MODE}，入口帧检查跳过`,
+  );
   add('style-phrase', `分镜图风格短语统一（${style ? `${styleId}：${style.phrase}` : '预设无效'}）——同剧不许画风漂`, bad.style.length === 0, bad.style.join('；'));
   add('prompt-english', '完整分镜图提示词全英文且基础 frame 非空', bad.english.length === 0, bad.english.join('；'));
   add('prompt-no-names', '英文提示词不含角色名（分镜图提示词恒查；中文 H3 提示词放行）', bad.names.length === 0, banned.length ? bad.names.join('；') : SKIP_NAMES);
@@ -1317,6 +1396,7 @@ export function seedFromScript(script, epRange = null) {
     cameraPlanMode: CAMERA_PLAN_MODE,
     promptDetailMode: PROMPT_DETAIL_MODE,
     framePlanMode: FRAME_PLAN_MODE,
+    frameEntryMode: FRAME_ENTRY_MODE,
     continuityMode: CONTINUITY_MODE,
     episodes,
   };
@@ -1418,6 +1498,7 @@ const GATE_LABELS_EN = {
   'h3-lang': 'Prompt language matches the promptLang setting',
   'prompt-detail': 'Production-rich prompt: visual layers per cut, layered soundscape and scored music arc per segment',
   'frame-density': 'Frame prompts use role-driven sparse / balanced / rich density and compile into the final image prompt',
+  'frame-entry-state': 'Every segment f1 is a pre-action entry state; motion starts only after the 0.00-second frame',
   'style-phrase': 'Frame-prompt style phrase consistent — one drama, one look',
   'prompt-english': 'Compiled frame prompts are English and the base frame is non-empty',
   'prompt-no-names': 'Compiled English frame prompts carry no character names',
@@ -1436,6 +1517,7 @@ const GATE_SKIPS_EN = {
     [`未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`]: `cameraPlanMode=${CAMERA_PLAN_MODE} not enabled — execution-plan checks skipped`,
     [`未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`]: `promptDetailMode=${PROMPT_DETAIL_MODE} not enabled — richness checks skipped`,
     [`未启用 framePlanMode=${FRAME_PLAN_MODE}，分镜图密度检查跳过`]: `framePlanMode=${FRAME_PLAN_MODE} not enabled — frame-density checks skipped`,
+    [`未启用 frameEntryMode=${FRAME_ENTRY_MODE}，入口帧检查跳过`]: `frameEntryMode=${FRAME_ENTRY_MODE} not enabled — entry-frame checks skipped`,
     [`未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`]: `continuityMode=${CONTINUITY_MODE} not enabled — continuity checks skipped`,
     [`剧本未启用 continuityMode=${CONTINUITY_MODE}，跨层剧情状态检查跳过`]: `script continuityMode=${CONTINUITY_MODE} not enabled — cross-layer script-state checks skipped`,
 };
@@ -1596,7 +1678,7 @@ const cameraPlanSummary = (cut, t) => {
 const framePlanSummary = (cut, t) => {
   const plan = cut?.framePlan;
   if (!plan || typeof plan !== 'object') return '';
-  return `${t.framePlan}: ${plan.role ?? '?'} / ${plan.density ?? '?'} · ${plan.keyMoment ?? '?'}`;
+  return `${t.framePlan}: ${plan.role ?? '?'} / ${plan.density ?? '?'} / ${plan.moment ?? '?'} · ${plan.keyMoment ?? '?'}`;
 };
 
 /* ------------------------------------------------------------------ */

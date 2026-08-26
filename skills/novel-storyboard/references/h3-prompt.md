@@ -15,7 +15,7 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 （单分镜的段改用官方 I2VA 固定句：For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.）
 
 integrated_multimodal_description:
-[Shot 1] Cinematic, live-action, cold gray-green palette. 先把 sourceState.before → sourceState.after 翻成可见动作，再按 <Picture 1> 锚定构图，依次写 visualPlan 的空间、光线、主体、动作，cameraPlan 的运镜执行，最后写效果、结束状态、连续性、导演意图和台词（全英文）。
+[Shot 1] Cinematic, live-action, cold gray-green palette. 先写 `motion begins only after the 0.00-second entry frame`，确认 <Picture 1> 是 sourceState.before / startState 的动作前入口态；随后才把 before → after 翻成可见动作，再写 visualPlan、cameraPlan、结束状态、连续性、导演意图和台词（全英文）。
 [Shot 2] At 00:03.000, continue directly from Shot 1 at the same instant, then anchor <Picture 2>: ……（**每个镜头独立一行**；先承接上一镜的状态和动作桥，再改变景别/机位）
 
 overall_soundscape: audioPlan.soundscape 的基底、渐强、事件、余韵四层。不复述台词。
@@ -51,6 +51,7 @@ non_diegetic_music: 有配乐时写 audioPlan.music 的类型、配器、动态�
 ## 关键帧怎么用
 
 - 静态关键帧先按 `frame-density.md` 填 `framePlan`，再使用报告或 export 生成的完整 imagePrompt 出图；不要把 JSON 里的基础 `frame` 直接交给图像模型。
+- 每段 f1 强制 `moment=entry`，逐项翻译 startState；H3 动作只能在0.00秒入口帧之后开始。详见 `frame-entry.md`。
 - 主分镜图（f1）钉 0.00 秒，是这一段世界观的完全参照；每个 `[Shot k]` 先锚定 `<Picture k>` 的构图与人物状态，再写动作展开
 - 动作遵守 novel-script 的**常见动作原则**：挑担上船、搭手卸担这类模型见过千万次的动作；精确物理交互、微表情不要写
 - 人物**此刻的位置状态**（已上船 / 在舱内）要和分镜图一致——图与文对不上，模型听图的，动作就乱

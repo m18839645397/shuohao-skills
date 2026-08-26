@@ -17,6 +17,7 @@
 - **每切有可执行的摄影计划** — 新 seed 默认开启 `cameraPlanMode: "cinematic-controlled"`：起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场逐字进入自己的 `[Shot k]`；固定镜头默认，一切只用一个主运镜
 - **最终提示词达到投产丰富度** — `promptDetailMode: "production-rich"` 要求逐切写空间、光线、主体、动作、效果、连续性，逐段写四层声景和配乐类型/配器/动态/同步点；不是靠字数堆形容词
 - **分镜图按叙事需要自动分配信息量** — `framePlanMode: "adaptive-density"` 按镜头功能选择 sparse / balanced / rich；报告和 export 确定性组装完整 imagePrompt，不再把薄的基础 `frame` 直接交给图像模型
+- **每段从真正的初始帧开始** — `frameEntryMode: "start-boundary"` 强制 f1 展示动作前 entry state，动作只能在0.00秒之后发生；后续子分镜才允许 impact/result
 - **相邻镜头共享同一状态边界** — `continuityMode: "state-linked"` 对账每切八项 startState/endState、五项 transitionPlan 和连续段 handoff；Shot 2 起先承接同一瞬间再改变景别/机位
 - **先继承剧本，再设计摄影** — 上游剧本启用状态链时，每切 `sourceState.before/after` 精确复制认领首拍/末拍的计算状态；跨层门拦截“分镜内部自洽，但没有继承剧本”的假连续
 - **分镜图是资产合成，不是凭空画** — 出图挂场景/角色/道具设定图当参考图，novel-art 和 novel-characters 的图在这一步真正被消费。有 codex 就真出图（可选）
@@ -25,7 +26,7 @@
 
 ![storyboard-report.html](assets/report.webp)
 
-## 质量门：21 道，全是代码
+## 质量门：22 道，全是代码
 
 与仓库里另外四个 skill 同一主张：**checklist 交给模型自觉是靠不住的**。
 
@@ -136,12 +137,13 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 + �
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / validate / checkup / render / export / slug
-  selftest.mjs           338 项断言，不调模型
+  selftest.mjs           350 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
   camera-direction.md    克制电影化运镜：执行计划、转场、按节拍自动选择
   prompt-detail.md       投产级丰富提示词：六层视觉、四层声景、配乐动态
+  frame-entry.md         段首 f1 动作入口态与 H3 0.00 秒起动边界
   frame-density.md       分镜图自适应 sparse / balanced / rich 画面密度
   continuity.md          镜间状态链、动作/光线/声音桥、段间 handoff
   storyboard-pass.md     切镜：分段规则、导演运镜手感、常见病
@@ -159,6 +161,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-338 项断言，覆盖节拍展开 / delivery 与剧本状态继承 / H3 骨架 / 克制运镜 / 丰富视频提示词 / 自适应分镜图密度 / 镜间状态链与段间 handoff / 21 道门逐项击穿 / 配方卡库 / seed / 中英渲染 / 导出。不调模型、不花额度、1 秒跑完。
+350 项断言，覆盖节拍展开 / delivery 与剧本状态继承 / H3 骨架 / 克制运镜 / 丰富视频提示词 / 段首动作入口帧 / 自适应分镜图密度 / 镜间状态链与段间 handoff / 22 道门逐项击穿 / 配方卡库 / seed / 中英渲染 / 导出。不调模型、不花额度、1 秒跑完。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。

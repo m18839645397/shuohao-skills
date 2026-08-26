@@ -17,11 +17,15 @@ import {
   CONTINUITY_TOKENS,
   DEFAULT_PARAMS,
   DEFAULT_STYLE,
+  FRAME_ENTRY_FIELDS,
+  FRAME_ENTRY_MODE,
+  FRAME_ENTRY_TOKENS,
   FRAME_DENSITIES,
   FRAME_PLAN_ARRAY_FIELDS,
   FRAME_PLAN_MODE,
   FRAME_PLAN_TEXT_FIELDS,
   FRAME_ROLES,
+  FRAME_MOMENTS,
   MUSIC_PLAN_FIELDS,
   HANDOFF_KINDS,
   PROMPT_DETAIL_MODE,
@@ -155,10 +159,20 @@ const adaptiveFrameDoc = (density = 'balanced', role = 'dialogue') => {
   const doc = cameraPlanDoc();
   const cut = doc.episodes[0].segments[0].cuts[0];
   doc.framePlanMode = FRAME_PLAN_MODE;
+  doc.frameEntryMode = FRAME_ENTRY_MODE;
+  cut.frame = 'medium shot of a woman poised at the edge of a muddy path before her first stride, cinematic film still, 16:9';
   cut.framePlan = {
     role,
     density,
-    keyMoment: 'The woman is caught mid-stride with the suitcase locked tightly against her chest',
+    moment: 'entry',
+    keyMoment: 'The woman stands poised at the muddy path edge before her first stride with the suitcase held tight',
+    entryStatePrompt: {
+      position: 'standing at the near edge of the muddy riverside path',
+      pose: 'torso inclined slightly forward while both feet still hold the ground',
+      gaze: 'fixed into the dense fog along the path ahead',
+      prop: 'the weathered leather suitcase remains locked against her chest',
+      effect: 'the puddles remain still before the first footstep lands',
+    },
     composition: 'She occupies the right third while the wet path and fog preserve a clear direction of travel',
     atmosphere: 'Fine fog softens the distance while one restrained puddle splash records her physical momentum',
     foreground: density === 'rich' ? ['Wet reeds cross the lower-left edge as a controlled depth cue'] : [],
@@ -168,6 +182,8 @@ const adaptiveFrameDoc = (density = 'balanced', role = 'dialogue') => {
       : ['The suitcase remains pressed protectively against her chest'],
     exclude: ['extra travellers or invented roadside structures'],
   };
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt
+    .replace('[Shot 1] ', `[Shot 1] ${FRAME_ENTRY_TOKENS.en}. `);
   return doc;
 };
 
@@ -373,7 +389,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 21, '二十一道门');
+eq(gateReport(FIXTURE, CTX).length, 22, '二十二道门');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -805,6 +821,44 @@ eq(h3Remainder('a <d>[Chinese] 你好</d> b "营业中" c'), 'a   b   c', 'h3Rem
 }
 ok(gate(FIXTURE, 'frame-density', CTX).ok && gate(FIXTURE, 'frame-density', CTX).detail.includes('跳过'), '旧 storyboard 没有 framePlanMode 时兼容并明说跳过');
 
+// frame-entry-state — f1 必须是动作前入口态，不能把动作中段或结果钉在 0.00 秒
+{
+  const doc = adaptiveFrameDoc();
+  ok(gate(doc, 'frame-entry-state', {}).ok, '段首 entry moment、五项入口态和 H3 起动边界完整时通过');
+  eq(FRAME_MOMENTS.join(','), 'entry,transition,impact,result', '关键帧时间语义枚举完整');
+  eq(FRAME_ENTRY_FIELDS.length, 5, '入口帧包含位置、姿态、视线、道具和效果五项');
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  const prompt = buildFrameImagePrompt(cut);
+  ok(prompt.includes('exact action-entry state at 0.00 seconds'), '完整 imagePrompt 明确 f1 是 0.00 秒动作入口态');
+  ok(FRAME_ENTRY_FIELDS.every((field) => prompt.includes(cut.framePlan.entryStatePrompt[field])), '五项入口态逐字进入完整 imagePrompt');
+}
+{
+  const doc = adaptiveFrameDoc();
+  doc.episodes[0].segments[0].cuts[0].framePlan.moment = 'impact';
+  ok(!gate(doc, 'frame-entry-state', {}).ok, '段首 f1 使用 impact 被拦');
+}
+{
+  const doc = adaptiveFrameDoc();
+  delete doc.episodes[0].segments[0].cuts[0].framePlan.entryStatePrompt;
+  ok(!gate(doc, 'frame-entry-state', {}).ok, '段首 f1 缺五项入口态被拦');
+}
+{
+  const doc = adaptiveFrameDoc();
+  doc.episodes[0].segments[0].cuts[0].framePlan.keyMoment = 'The woman has just slammed the suitcase onto the wet ground';
+  ok(gate(doc, 'frame-entry-state', {}).detail.includes('动作中段或结果'), '动作结果被钉在 f1 时拦截');
+}
+{
+  const doc = adaptiveFrameDoc();
+  doc.episodes[0].segments[0].cuts[0].frame = 'medium shot of a young woman running through fog, cinematic film still, 16:9';
+  ok(gate(doc, 'frame-entry-state', {}).detail.includes('动作中段或结果'), '主体已经在奔跑的 f1 被拦截');
+}
+{
+  const doc = adaptiveFrameDoc();
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace(FRAME_ENTRY_TOKENS.en, 'the action is underway');
+  ok(gate(doc, 'frame-entry-state', {}).detail.includes('动作必须从 0.00 秒入口帧之后开始'), 'H3 没声明动作从入口帧后开始被拦');
+}
+ok(gate(FIXTURE, 'frame-entry-state', CTX).ok && gate(FIXTURE, 'frame-entry-state', CTX).detail.includes('跳过'), '旧 storyboard 未启用 frameEntryMode 时明确跳过');
+
 // style-phrase — 同剧分镜图画风不许漂
 {
   eq(DEFAULT_STYLE, 'realistic', '默认半写实');
@@ -1071,6 +1125,7 @@ eq(seeded.source, '渡口', 'seed 带剧名');
 eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
 eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
 eq(seeded.framePlanMode, FRAME_PLAN_MODE, 'seed 默认开启分镜图自适应画面密度');
+eq(seeded.frameEntryMode, FRAME_ENTRY_MODE, 'seed 默认强制段首 f1 对齐动作入口态');
 eq(seeded.continuityMode, CONTINUITY_MODE, 'seed 默认开启状态链连续性');
 eq(seeded.params.minSegmentSeconds, 5, '新 seed 默认每段至少 5 秒');
 eq(seeded.params.maxSegmentSeconds, 10, '新 seed 默认每段最多 10 秒');
@@ -1120,7 +1175,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 21 / 21'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 22 / 22'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
 ok(html.includes('主分镜图 · #1 未生成'), '主分镜图缺图时显示占位不装有');
@@ -1193,7 +1248,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 21 / 21'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 22 / 22'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
   ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');

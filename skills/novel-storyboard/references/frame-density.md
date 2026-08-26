@@ -11,7 +11,15 @@
   "framePlan": {
     "role": "reveal",
     "density": "rich",
-    "keyMoment": "The woman's palm has just struck the suitcase lid while the reaching hand stops at the frame edge",
+    "moment": "entry",
+    "keyMoment": "The woman's palm waits poised above the suitcase lid before the downward strike begins",
+    "entryStatePrompt": {
+      "position": "seated at the far corner of the ferry cabin with the suitcase on her knees",
+      "pose": "right palm held above the lid while both shoulders remain braced",
+      "gaze": "fixed on the approaching hand at frame right",
+      "prop": "the suitcase remains closed and pressed against both knees",
+      "effect": "the intruding hand has not yet crossed the gap above the lid"
+    },
     "composition": "The suitcase clasp holds the centre plane, the woman's hand enters from above and the intruding hand remains separated at frame right",
     "atmosphere": "Cold cabin light catches the worn leather grain while a faint fog glow holds the distant doorway",
     "foreground": ["The intruding hand stays slightly soft at the right edge as a controlled threat cue"],
@@ -24,7 +32,8 @@
 
 - `role`：`establishing` / `dialogue` / `reaction` / `action` / `reveal` / `insert` / `atmosphere`。
 - `density`：`sparse` / `balanced` / `rich`。
-- `keyMoment`：这一切**开始时**的定格瞬间，只写一个动作阶段，不能把 2–5 秒过程压成连环画。
+- `moment` / `entryStatePrompt`：段首 f1 的时间边界与五项开始态，详见 `frame-entry.md`。
+- `keyMoment`：这一切的定格瞬间；段首必须是动作前 entry，后续子分镜才允许 transition / impact / result。
 - `composition`：主体放在哪、空间怎样分层、留白在哪里；不复述人物长相。
 - `atmosphere`：静态画面可见的雾、风、尘、水、反射、衣摆或动作余势。
 - `foreground` / `background`：辅助空间层；画面主体天然位于中层，不单独重复存。

@@ -7,7 +7,7 @@ Storyboarding for AI short drama: turns novel-script's beat flow into a worklist
 ```
 segment = one video-generation call, new seeds default to 5–10s, never crosses scenes
  ├─ cuts × 3–5 = intra-segment edits, 2–5s each (hard gate), each claiming script beats
- ├─ frames    = one keyframe per cut: the master frame pinned at 0.00s,
+ ├─ frames    = one keyframe per cut: a pre-action entry frame pinned at 0.00s,
  │              sub-frames pinned at their own cut marks
  └─ H3 prompt = one per segment; multi-picture alignment + [Shot k] cut times audited verbatim
 ```
@@ -18,6 +18,7 @@ segment = one video-generation call, new seeds default to 5–10s, never crosses
 - **Every cut carries an executable camera plan** — new seeds enable `cameraPlanMode: "cinematic-controlled"`: start position, pace/magnitude, target, focus, end composition, intent and transition are copied into that cut's own `[Shot k]`; static is the default and each cut gets one primary move
 - **Final prompts carry production-level detail** — `promptDetailMode: "production-rich"` requires environment, lighting, subject, action, effects and continuity per cut, plus four-layer soundscape and scored music style/instrumentation/arc/sync per segment
 - **Storyboard frames receive role-driven visual density** — `framePlanMode: "adaptive-density"` selects sparse / balanced / rich by shot function; reports and export deterministically compile the full image prompt instead of sending the thin base `frame` to the image model
+- **Every segment starts from a true initial frame** — `frameEntryMode: "start-boundary"` forces f1 to show the pre-action entry state; motion begins only after 0.00s and later sub-frames may carry impact/result moments
 - **Adjacent shots share one exact state boundary** — `continuityMode: "state-linked"` audits eight start/end state fields, five transition-plan bridges and continuous-segment handoffs; Shot 2 first continues the same instant before changing composition
 - **Inherit the drama before designing the camera** — when the script enables state linking, every cut copies its claimed first/last beat into `sourceState.before/after`; the cross-layer gate blocks a storyboard that is internally consistent but not faithful to the script
 - **Frames are asset composition, not invention** — generation feeds the scene / character / prop sheets as references; with codex installed the frames are actually generated (optional)
@@ -26,7 +27,7 @@ Outputs `storyboard.json`, a Markdown shot list, and a self-contained `storyboar
 
 ![storyboard-report.html](assets/report.webp)
 
-## Twenty-one quality gates, all code
+## Twenty-two quality gates, all code
 
 Same stance as the other four skills in this repo: **a checklist the model grades itself on is worthless.**
 
@@ -128,7 +129,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-338 assertions — beat expansion, delivery and script-state inheritance, H3 skeletons, controlled camera plans, production-rich video prompts, adaptive frame density, cut/segment state chains, all twenty-one gate-defeating cases, recipe cards, seed, rendering and export. No model calls, runs in about a second.
+350 assertions — beat expansion, delivery and script-state inheritance, H3 skeletons, controlled camera plans, production-rich video prompts, pre-action segment entry frames, adaptive frame density, cut/segment state chains, all twenty-two gate-defeating cases, recipe cards, seed, rendering and export. No model calls, runs in about a second.
 
 The bundled `examples/渡口-storyboard.json` remains the complete legacy-compatibility fixture for rhythm, alignment and recipes. New adaptive frame structure is demonstrated in `references/frame-density.md` and exercised by the selftest fixtures.
 

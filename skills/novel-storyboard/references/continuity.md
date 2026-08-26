@@ -18,6 +18,8 @@
 
 `sourceState` 是剧情事实，回答“谁在哪里、保持什么姿态和情绪、道具归谁、动作进行到哪一步”；下面的 `startState/endState` 是摄影翻译，补充光线、画面方向和效果状态。先复制 sourceState，再写摄影状态，不能用通用模板替代剧本状态。
 
+每段 f1 再把 `startState` 翻译成英文 `framePlan.entryStatePrompt`，真正交给图像模型；否则状态只存在 JSON 校验层，图片仍可能从动作中段开始。详见 `frame-entry.md`。
+
 `script-state-link` 会按 cut 的 `beats` 重新计算期望状态并逐项对账。它解决的是“分镜内部状态完全相等，却没有忠实继承剧本”的假连续。旧剧本没有状态模式时本门明确跳过。
 
 ## 每切 startState / endState
