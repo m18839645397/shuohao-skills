@@ -7,6 +7,7 @@ Feed it a novel or a short story, and get a complete design bible for every char
 - **Cast list** — who appears, how central they are, with every name a character is called by folded into one person
 - **Profile** — gender, age, standing, appearance, temperament, motivation, arc, relationships, each backed by **verbatim quotes from the source**
 - **Design prompts** — semi-realistic painterly direction, bilingual image prompt + negative prompt + style tags, ready for Midjourney / SD / GPT-Image
+- **Ensemble visual identity** — build a design matrix first, then assign 1–5 signature anchors by importance; leads remain identifiable at silhouette, medium and close range while major characters contrast deliberately
 - **Voice prompts** — timbre, pitch, pace, accent, emotion, plus a voice-design prompt for Qwen3-TTS / ElevenLabs Voice Design
 - **A character model sheet** — **one per character**: a 16:9 image in three zones: an ID-photo-style bust on the left (~34%, the reference for the face design), a full-body turnaround top-right, and a strip of key-detail close-ups bottom-right. White background for clean cut-out, generated through codex's built-in image tool (optional)
 - **Relationship map** — a whole-cast view inside the report: who is tied to whom, and how. Hover a character to light up every link they are part of, click to jump to their profile
@@ -43,7 +44,7 @@ If you have an `outline.json`, start with `seed` — its `characters` block alre
 node scripts/novel-characters.mjs seed outline.json > seed.json
 ```
 
-What comes across is what the outline already decided (character id, name, tier, arc, which source characters were merged into this one); what is left blank is the work this layer owes (aliases, profile, design prompt, voice prompt). `tier` maps onto `importance`: `lead` → protagonist, `support` → supporting, `functional` → minor.
+What comes across is what the outline already decided (character id, name, tier, arc, merged source roles); what is left blank is this layer's work (aliases, profile, visualIdentity, design and voice prompts). New seeds enable `designMode: "ensemble-signature"`.
 
 **Do not overturn the outline's tiers here**; if a tier looks wrong, go fix the outline. Splitting *within* the lead group is fine — `lead` covers leads plus the main antagonist, so `seed` assigns protagonist to all of them and you demote the non-leads to major using the `role` recorded in `seedNote`.
 
@@ -131,8 +132,11 @@ The text is split on paragraph boundaries into overlapping 40k-character chunks.
 **Merge**
 Names and aliases are indexed together, so different forms of address across chunks converge onto one person. Where exact matching cannot reach (「陆」 and 「陆行远」 share no key), the script lists containment-based `mergeCandidates` for the model to review; confirmed merges are applied deterministically from a merges.json. Characters are ranked by how many chunks mention them — that ranking is the proxy for screen time.
 
+**Ensemble design pass**
+Create `design-matrix.json` first: 4–5 anchors for a protagonist, 3–4 for major, 2–3 for supporting and 1–2 for minor. Important characters state at least two visual axes on which they contrast. Assemble injects the matrix by id or name.
+
 **Pass 2 — profile**
-Only the top N characters (**30 by default**) get a full sheet, built from every observation merged for them. Each one is told the names of its siblings in the same cast, so their looks and voices don't collapse into each other. Ethnicity, era and region are inferred from the source and written explicitly into the image prompts — **they do not follow `--lang`**. Rendering the report in Japanese does not turn a Republican-era Chinese ferryman into a Japanese man.
+Each worker receives the complete design matrix, not merely sibling names, so it knows which silhouette, facial, costume, gesture and prop spaces are already occupied.
 
 **Validate** (never skipped)
 Four hard rules, all checked deterministically by a script rather than trusted to the model:
@@ -143,6 +147,8 @@ Four hard rules, all checked deterministically by a script rather than trusted t
 | Image prompts must **not contain character names** | Image models bias hard on names and will draw the character they remember instead of yours |
 | **Language split** per field | Human-readable fields follow `--lang`, image and TTS prompts are always English — the model drifts otherwise |
 | **Style matches its negative prompt** | `realistic` / `cinematic` must not ban `photorealistic`; `ghibli` / `inkwash` must — get it backwards and the whole batch is wasted |
+| **Importance-driven identity budget** | protagonist 4–5, major 3–4, supporting 2–3, minor 1–2; leads cover all three recognition distances |
+| **Signature anchors land in production prompts** | every anchor appears verbatim in image.prompt and image.sheet; important roles need contrastAgainst and cross-character anchor collisions fail |
 | Structure and enums | `importance` is one of exactly four values |
 
 None of these were written up front. Each one exists because real model output violated it and the validator caught it.
@@ -166,8 +172,8 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # filesystem
 
 - Caps at 24 chunks (~930k characters net of overlap) per run. Beyond that it reports `truncated` explicitly — it does **not** silently drop the tail
 - Human-readable fields follow `--lang`; image and TTS prompts are **always English**, since those engines work best that way regardless of report language
-- The top 30 characters by prominence are profiled by default, and **every one of them gets a sheet** — one call per character, so this is the slowest step on a large cast. Ask for a smaller number, or for leads only, if you want it shorter
-- **Art style can still vary across a cast**, since each character is generated independently. It used to drift badly under the old "flat vector cartoon" wording — one run produced anime-ish, semi-realistic and ink-wash results side by side. The explicit style presets fixed most of that, but not all of it. Feeding the first sheet back as a reference helps; see `references/sheet.md`
+- Protagonist / major roles generate 2–3 identity candidates, lock one as `identity.png`, then expand that identity into the sheet; supporting / minor usually go straight to sheet
+- Prefer a separate render-material reference for cast-wide style. If another character sheet is used, explicitly forbid copying face, body, hair, costume silhouette, palette or accessories
 
 > ⚠️ **If you have more than one codex installed, mind the version.** An older one fails outright with `requires a newer version of Codex` instead of degrading. The skill probes for the highest version it can find; if yours is simply old, run `npm i -g @openai/codex`.
 
@@ -176,22 +182,17 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # filesystem
 ```
 SKILL.md                 the workflow the agent reads
 scripts/
-  novel-characters.mjs   chunk / merge / assemble / validate / render / slug
-  selftest.mjs           355 assertions, never calls a model
+  novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / render / slug
+  selftest.mjs           391 assertions, never calls a model
 references/
   roster-pass.md         pass 1: scanning for characters
-  profile-pass.md        pass 2: building a character sheet (8 hard rules)
+  profile-pass.md        pass 2: building a character sheet (9 hard rules)
+  ensemble-design.md     ensemble matrix, importance budgets and identity locking
   schema.md              sheet structure and which language each field takes
   sheet.md               the codex contract for model-sheet generation
   report-style.md        design conventions for report.html
   style-presets.md       image style presets (realistic / cinematic / ghibli / inkwash)
-examples/
-  渡口.txt                bundled short story, 4 characters
-  渡口-cast.json          its output, doubling as the validation fixture
-  渡口-cast.md            rendered result, a quality baseline
 ```
-
-In `examples/渡口.txt` the peddler is only ever referred to by a nickname and the ferryman is addressed once as "old uncle" — the story exists specifically to exercise alias merging.
 
 ## Self-test
 
@@ -199,6 +200,6 @@ In `examples/渡口.txt` the peddler is only ever referred to by a nickname and 
 node scripts/selftest.mjs
 ```
 
-355 assertions across chunking, alias merging, assembly, localization, validation, and rendering. No model calls, no quota, runs in about a second. Run it before anything else after touching the scripts.
+391 assertions across chunking, alias merging, ensemble design, importance-driven signature anchors, identity-lock prompts, assembly, localization, validation, and rendering. No model calls, no quota, runs in about a second.
 
-**Only tested on macOS with Node 24.** There is no platform-specific code, so Linux and older Node releases should be fine, but that is **unverified**.
+Full selftest verified on Windows with Node 22.19.0; Node 18 or newer is required.

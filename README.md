@@ -11,7 +11,7 @@
 | Skill | 做什么 |
 | --- | --- |
 | [**novel-outline**](skills/novel-outline) | 把一本小说改编成短剧大纲五件套：改编说明、人物表、爽点表、分集梗概、资产清单（含叙事道具表）。14 道质量门全部脚本检查，支持已有大纲的体检模式 |
-| [**novel-characters**](skills/novel-characters) | 把大纲定下的角色做成角色设定集：人物画像、形象提示词、音色提示词、角色设定图。吃 outline.json 预填角色表，报告语言与出图风格可选 |
+| [**novel-characters**](skills/novel-characters) | 把大纲定下的角色做成角色设定集：先做群像视觉矩阵，按 importance 分配签名锚点；重要角色先锁身份再展开三视图，避免主配角都成为路人。报告语言与出图风格可选 |
 | [**novel-art**](skills/novel-art) | 给 AI 短剧出美术设定集（场景 + 叙事道具）：一致性锚点、光照与状态变体、尺度参照、无人无手白底提示词。吃 outline.json 预填清单，11 道质量门全部脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算；每场入口状态 + 每个动作拍 `statePatch` 计算剧情状态链，台词本按角色聚合并直接对接 TTS。11 道质量门全部脚本检查 |
 | [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：新 seed 每段 5–10 秒 → 分镜 2–5 秒 → 每切一张分镜图；逐切继承剧本 `sourceState`，再完成运镜、丰富 H3、自适应 sparse/balanced/rich 画面密度和镜头/段间状态链，export 一键出投产包。21 道质量门全部脚本检查 |
@@ -57,11 +57,12 @@ $novel-characters
 
 使用原文 D:\novels\原著.txt 和
 D:\novels\demo\outline\<剧名>-outline.json 生成角色设定集。
-画风使用 cinematic，先给主要角色出设定图，输出到
+画风使用 cinematic；先完成 design-matrix，给 protagonist / major
+各生成身份候选并确认 identity，再展开完整设定图，输出到
 D:\novels\demo\characters。
 ```
 
-可用画风：`realistic`（半写实厚涂）、`cinematic`（电影级真人写实）、`ghibli`（手绘动画）、`inkwash`（国风水墨）。角色多时先做主角组，确认脸和画风再继续。产出 `cast.json`、报告和可选角色设定图。
+可用画风：`realistic`（半写实厚涂）、`cinematic`（电影级真人写实）、`ghibli`（手绘动画）、`inkwash`（国风水墨）。角色多时先确认主角组的剪影、脸部与服装锚点，再继续配角。产出 `cast.json`、报告、可选 identity 图和完整角色设定图。
 
 ### 3. 做场景与叙事道具
 
@@ -152,10 +153,6 @@ node scripts/report-selftest.mjs   # 92 项断言，不起浏览器
 **novel-outline · 短剧改编大纲**
 
 ![短剧改编大纲报告](skills/novel-outline/assets/report.webp)
-
-**novel-characters · 角色设定集**
-
-![角色设定集报告](skills/novel-characters/assets/report.webp)
 
 **novel-art · 美术设定集（场景 + 道具，设定图为 skill 实际生成）**
 

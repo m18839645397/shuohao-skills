@@ -7,6 +7,7 @@
 - **角色表** — 谁出场了，主角还是龙套，跨章节的不同称呼归并到同一个人
 - **人物画像** — 性别、年龄、身份、外貌、性情、动机、人物弧光、关系网，每条附**原文逐字引文**
 - **形象提示词** — 半写实厚涂路线，双语出图 prompt + negative prompt + 风格标签，直接喂 Midjourney / SD / GPT-Image
+- **群像视觉身份** — 先做 design-matrix，再按 importance 分配1–5个签名锚点；主角在剪影、中景和特写三个距离都能认出，重要角色主动形成对照
 - **音色提示词** — 音色、音高、语速、口音、情绪，双语 voice-design prompt，直接喂 Qwen3-TTS / ElevenLabs Voice Design
 - **角色设定图** — **每个角色一张**：16:9 分三区，左侧约 34% 证件照式半身像（面部基准）、右上全身三视图、右下关键细节特写条。**画风可选**：默认半写实厚涂，也可以出电影级真人写实、吉卜力动画风或国风水墨。白底方便抠图，走 codex 内置出图（可选）
 - **关系图谱** — 报告里的一个全景视图：谁跟谁有关系、是什么关系，一眼看完。悬停一个人亮出他的全部关系，点一下跳到那个人的详情
@@ -28,12 +29,6 @@
 node scripts/novel-characters.mjs ui-template fr   # 打印待翻译的骨架
 ```
 
-![report.html](assets/report.webp)
-
-角色设定图（自带样例《渡口》的沈知微）：
-
-![角色设定图](assets/sheet.jpg)
-
 ## 上游
 
 管线里**大纲在角色的上游**：
@@ -49,7 +44,7 @@ novel-characters → cast.json    （谁：角色资产）
 node scripts/novel-characters.mjs seed outline.json > seed.json
 ```
 
-搬过来的是大纲拍板过的事实（角色码、名字、分档、人物线、由原著的谁合并而来），留空的是这一层才该做的设计（别名、画像、形象提示词、音色提示词）。`tier` 映射成 `importance`：`lead` → protagonist、`support` → supporting、`functional` → minor。
+搬过来的是大纲拍板过的事实（角色码、名字、分档、人物线、由原著的谁合并而来），留空的是这一层才该做的设计（别名、画像、visualIdentity、形象提示词、音色提示词）。新 seed 默认开启 `designMode: "ensemble-signature"`。
 
 **大纲定的分档不要在这一层推翻**，觉得不对回去改大纲。主角组内部可以细分——`lead` 是「男女主 + 主反派」一整组，seed 一律给 protagonist，照 `seedNote` 里的定位把主角之外的改成 major。
 
@@ -138,8 +133,11 @@ node scripts/novel-characters.mjs styles ghibli   # 看某一个的完整内容
 **归并**
 按名字和别名建索引，`陆行远` / `陆` / `姑娘` 这类跨块的不同叫法收敛成同一个人。精确匹配管不到的（「陆」和「陆行远」没有共同键），脚本会按名字包含关系列成 `mergeCandidates` 疑似同人候选，由模型复核后写成 merges.json 确定性落地合并。按出现块数当戏份权重排序。
 
+**群像设计趟**
+先写 `design-matrix.json`：主角4–5个签名锚点、主要角色3–4、配角2–3、龙套1–2；重要角色明确在哪两个视觉轴上互相避让。矩阵按 id／名字注入角色卡，是全批角色的视觉唯一来源。
+
 **第二趟 · 出卡**
-只对戏份最重的 N 位（**默认 30**），把归并后的全部描写喂进去，一次生成完整角色卡。同批角色互相知道对方的名字，避免长相和声线撞车。族裔、年代、地域从原文推断后写死进出图提示词——**不跟报告语言走**，报告出成日文不会把民国的老船夫画成日本人。
+只对戏份最重的 N 位（**默认 30**），把归并记录与完整群像矩阵一起喂进去。同批角色不再只知道名字，而是知道别人已经占用的剪影、脸部、服装、姿态和道具空间。
 
 **校验**（这步不能跳）
 四类硬规则，全部由脚本确定性检查，不靠模型自觉：
@@ -150,6 +148,8 @@ node scripts/novel-characters.mjs styles ghibli   # 看某一个的完整内容
 | 出图 prompt **不许出现人名** | 图像模型对人名偏见极重，会画成它记忆里的角色 |
 | 字段**语言分工** | 人类字段跟随 `--lang`、出图和 TTS 提示词永远英文，模型会漂 |
 | **风格与反向提示词匹配** | `realistic` / `cinematic` 不能禁 `photorealistic`、`ghibli` / `inkwash` 必须禁，搞反整批图就废 |
+| **重要度视觉预算** | protagonist 4–5、major 3–4、supporting 2–3、minor 1–2；主角覆盖三个识别距离 |
+| **签名锚点落地** | 每条锚点逐字进入 image.prompt 和 image.sheet；重要角色必须 contrastAgainst，跨角色锚点雷同会被拦 |
 | 结构 + 枚举 | `importance` 只能是那四个值 |
 
 这四条不是拍脑袋定的——是模型输出真的违反过、被校验脚本当场抓住才立起来的。
@@ -173,8 +173,8 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # 安全文�
 
 - 单次上限 24 块（净覆盖约 93 万字符）。超了会明确报 `truncated`，**不静默截断**
 - 人类可读字段跟随 `--lang`；出图和 TTS 提示词**永远英文**，那些引擎吃英文最稳，跟报告语言无关
-- 默认取戏份最重的 30 位角色，**每位都出设定图**——一个角色一次调用，所以角色多的时候这步最花时间。想少出就直接给个数，或者说只要主要角色
-- **同一批角色的画风可能有差异**——各自独立出图。早期用「扁平矢量卡通」时漂得很厉害（同批出成动画感／半写实／水墨写实三种），换成明确的风格预设后好了很多，但不能保证完全一致。在意的话拿第一张当参考图压一压，见 `references/sheet.md`
+- protagonist / major 先生成2–3张身份候选，选定 `identity.png` 后再展开 sheet；supporting / minor 默认直接出 sheet
+- 同批统一画风优先用独立材质板；拿第一张角色图做参考时，必须禁止复制脸型、体态、发型、服装轮廓、色块和配饰
 
 > ⚠️ **机器上装了多个 codex 要注意版本。** 旧版本会直接报 `requires a newer version of Codex` 而不是降级。skill 里带了自动挑最高版本的探测逻辑，整体太旧就 `npm i -g @openai/codex`。
 
@@ -183,22 +183,17 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # 安全文�
 ```
 SKILL.md                 给 agent 读的工作流
 scripts/
-  novel-characters.mjs   chunk / merge / assemble / validate / render / slug
-  selftest.mjs           355 项断言，不调模型
+  novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / render / slug
+  selftest.mjs           391 项断言，不调模型
 references/
   roster-pass.md         第一趟：扫描角色
-  profile-pass.md        第二趟：生成角色卡（8 条硬规则）
+  profile-pass.md        第二趟：生成角色卡（9 条硬规则）
+  ensemble-design.md     群像视觉矩阵、importance 预算、重要角色身份锁定
   schema.md              角色卡结构 + 字段语言归属
   sheet.md               角色设定图出图的 codex 调用契约
   report-style.md        report.html 的设计约定
   style-presets.md       出图风格预设（realistic / cinematic / ghibli / inkwash）
-examples/
-  渡口.txt                自带短故事，4 个角色
-  渡口-cast.json          产出，同时是校验自检夹具
-  渡口-cast.md            渲染结果，质量基准
 ```
-
-`examples/渡口.txt` 里货郎全程只有绰号、船夫只被叫过「老伯」——专门用来验别名归并。
 
 ## 自测
 
@@ -206,6 +201,6 @@ examples/
 node scripts/selftest.mjs
 ```
 
-355 项断言，覆盖分块 / 别名归并 / 合成 / 多语言 / 校验 / 渲染。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
+391 项断言，覆盖分块 / 别名归并 / 群像视觉矩阵 / importance 签名锚点 / 身份锁定提示词 / 合成 / 多语言 / 校验 / 渲染。不调模型、不花额度、1 秒跑完。
 
-**只在 macOS + Node 24 上实测过。** 代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但**没验过**。
+已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥18。

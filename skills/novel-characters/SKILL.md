@@ -1,9 +1,11 @@
 ---
 name: novel-characters
-version: 1.13.0
+version: 2.0.0
 description: |
   从小说或短故事里拆出角色表、人物画像、形象提示词、音色提示词，
   并给每个角色出角色设定图（左半身像 + 右全身三视图 + 细节条），产出 JSON + Markdown + 可交互的 report.html。
+  新流程先做群像视觉矩阵，按 protagonist/major/supporting/minor 分配签名锚点；重要角色先锁身份再展开三视图，
+  避免主配角都成为只有年龄、服装颜色不同的路人。
   报告语言可指定（--lang），默认中文，任意语言都支持；
   出图风格可指定（--style），默认半写实，也可以出电影级真人写实、吉卜力动画风或国风水墨。
   零依赖、零 API key，用当前会话额度；出图走 codex 内置 $imagegen（可选）。
@@ -102,7 +104,7 @@ node {baseDir}/scripts/novel-characters.mjs seed <outline.json> > <workdir>/seed
 | `arc` | 直接落进 `persona.arc` |
 | `role` / `from` | 进 `seedNote`——定位（女主 / 反派）与「由原著的谁合并而来」，扫原文时知道该收哪几条线的戏 |
 
-留空待填：`aliases`（要读原文才知道）、`oneLiner`、`persona` 其余各项、`image`、`voice`。**seed 出来的是骨架不是成品**，直接跑 `validate` 会报一堆字段缺失，那是预期的——后面 Step 2–6 就是来填它的。
+留空待填：`aliases`（要读原文才知道）、`oneLiner`、`persona` 其余各项、`visualIdentity`、`image`、`voice`；顶层默认开启 `designMode: "ensemble-signature"`。**seed 出来的是骨架不是成品**，直接跑 `validate` 会报一堆字段缺失，那是预期的。
 
 两处口径要守住：
 
@@ -161,6 +163,19 @@ node {baseDir}/scripts/novel-characters.mjs merge <workdir> --apply merges.json 
 
 取前 N 位。默认 30，用户说了就听用户的。剩下的角色在最后汇报里提一句「还识别出 X 位没做画像」。
 
+### Step 5.5 — 群像视觉矩阵 ⛔ 新流程不能跳
+
+读 `{baseDir}/references/ensemble-design.md`。不要立刻并发写所有角色卡，先根据 importance、剧情功能和同批角色关系写 `<workdir>/design-matrix.json`：
+
+- protagonist：4–5 个签名锚点，覆盖剪影／中景／特写
+- major：3–4 个锚点，至少在两个视觉轴上主动避开另一重要角色
+- supporting：2–3 个锚点，职业功能清楚并有一个记忆点
+- minor：1–2 个锚点，身份可读即可，不做成奇装异服
+
+锚点来自脸部几何、头身比例、肩背开合、服装外轮廓、磨损位置、持物方式和重复姿态。不要用异色头发、满身首饰、高饱和颜色或通用伤疤套餐代替设计。
+
+矩阵定完再进第二趟。它是全批角色共享的视觉唯一来源；单卡 worker 不得各自重做。
+
 ### Step 6 — 第二趟出卡
 
 每个角色一份，同样能并发就并发。
@@ -169,7 +184,7 @@ node {baseDir}/scripts/novel-characters.mjs merge <workdir> --apply merges.json 
 - `{baseDir}/references/profile-pass.md` 和 `{baseDir}/references/schema.md`（读它们，照着做）
 - **报告语言 `lang`**（Step 0 定的）
 - 该角色归并后的 `name` / `aliases` / `notes` / `quotes`
-- **同批其他角色的名字**（避免长相声线撞车）
+- **完整 `design-matrix.json`**（不只是其他角色名字）：本角色锚点逐字进入 `image.prompt` 和 `image.sheet`，同时看对照角色的已占用视觉空间
 
 角色卡 JSON 写到 `<workdir>/card-<slug>.json`。**断点续跑**：`card-<slug>.json` 已存在的角色不必重跑。
 
@@ -183,6 +198,8 @@ node {baseDir}/scripts/novel-characters.mjs assemble <workdir> \
   --out <输出目录>/<书名>-cast.json
 ```
 
+`assemble` 默认读取 `<workdir>/design-matrix.json`，按 id／名字把矩阵里的 `visualIdentity` 注入角色卡，并在 cast.json 顶层写入 `designMode` / `designPrinciple`。没有矩阵直接报错，不生成不完整 cast。
+
 坏卡会被逐个点名——哪份 `card-*.json` 坏了就只重跑那个角色，其他不用动。
 
 同档角色的先后是戏份顺序，来自 Step 4 留下的 `<workdir>/merged.json`（assemble 自动读，也可用 `--order` 指别的文件）。报告左栏「按戏份排序」的序号就靠它——看到「同档角色将按文件名序」的警告说明 merged.json 丢了，回 Step 4 重新生成。
@@ -193,11 +210,19 @@ node {baseDir}/scripts/novel-characters.mjs assemble <workdir> \
 node {baseDir}/scripts/novel-characters.mjs validate <cast.json> <book.txt>
 ```
 
-记得带上 `--lang`（Step 0 定的）。检查：结构、`importance` 枚举、**引文逐字**、**出图提示词不含人名**、**语言分工**（人类字段跟随 `lang`、出图/TTS 提示词永远英文）、以及**非内置语言必须带 `ui`**。
+记得带上 `--lang`（Step 0 定的）。除原有结构、引文、语言和提示词纪律外，新模式还检查：importance 对应的锚点数量与类别、三个识别距离、重要角色 `contrastAgainst`、锚点逐字进入两条出图提示词、以及角色间签名锚点雷同度。
 
 **有违规就按报错逐条修，改完重跑，直到通过。** 这四类错模型真的会犯——这套检查就是被真实输出打出来的。
 
 ### Step 8 — 出图（可选，每个角色都出）
+
+**protagonist / major 先锁身份再出设定表：**
+
+```bash
+node {baseDir}/scripts/novel-characters.mjs identity-prompt <cast.json> <角色名或 id>
+```
+
+用打印出的提示词生成 2–3 个候选，选定为 `images/<slug>-identity.png`；随后生成 sheet 时，把该角色自己的 identity 图作为参考图。supporting / minor 默认直接生成 sheet。这样额外调用只花在重要角色上。
 
 **每个角色一张**，用 `image.sheet`，落到 `./images/<slug>-sheet.png`。一张横构图内部左右分栏：
 
@@ -217,10 +242,11 @@ node {baseDir}/scripts/novel-characters.mjs validate <cast.json> <book.txt>
 - **没有 codex 就整步跳过**，只交提示词，后面照常走
 - 跑在 codex 里就直接用 `$imagegen`；跑在别处就 shell 调 codex，先按那里的脚本探测版本最高的 binary（旧版会直接报错）
 - **一个角色一次调用，绝不批量**
+- 用别的角色成图统一画风时，只复制渲染、线条、明暗和版面；明确禁止复制脸型、体态、发型、服装轮廓、色块和配饰
 - 单个失败就跳过，不阻断；最后汇总说明
 - **断点续跑**：`images/<slug>-sheet.png` 已存在就跳过，失败重来时只补缺的
 
-**不按 `importance` 筛，选中的角色全都出。** 一个角色一次调用，30 个就是 30 次——这是整条管线里最慢的一步，开始前跟用户说一声要出多少张。用户想省就让他给个数，或者明说只要 `protagonist` / `major`。
+**不按 `importance` 筛，选中的角色最终都出 sheet。** supporting/minor 通常一次调用；protagonist/major 会增加身份候选和身份锁定步骤。开始前分别汇报要出多少张身份候选、多少张完整 sheet；用户想省可以减少候选数或只做重要角色。
 
 ### Step 9 — 输出
 
@@ -244,7 +270,8 @@ report.html 的样式约定见 `{baseDir}/references/report-style.md`——要�
 ├── <书名>-cast.md
 ├── report.html                    ← 双击就能开
 └── images/
-    └── <slug>-sheet.png           ← 有 codex 才有
+    ├── <slug>-identity.png        ← protagonist / major 的身份锁定图
+    └── <slug>-sheet.png           ← 完整角色设定图
 ```
 
 ### Step 10 — 汇报
@@ -267,8 +294,8 @@ report.html 的样式约定见 `{baseDir}/references/report-style.md`——要�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-355 项断言，不调模型、不花额度，覆盖分块 / 归并 / 合成 / 多语言 / 校验 / 渲染的全部确定性逻辑。改完脚本先跑这个。
+391 项断言，不调模型、不花额度，覆盖分块 / 归并 / 群像视觉身份 / importance 分档锚点 / 合成 / 多语言 / 校验 / 渲染的全部确定性逻辑。改完脚本先跑这个。
 
-## 自带样例
+## 自测夹具
 
-`{baseDir}/examples/渡口.txt` 是一篇短故事，4 个角色，其中货郎全程只有绰号、船夫只被叫过「老伯」——专门用来验别名归并。对应产出 `渡口-cast.json` / `渡口-cast.md` 可以当质量基准，也是校验的自检夹具。
+自测使用脚本内置的独立群像夹具，不依赖或发布故事样例文件。群像视觉身份结构以 `references/ensemble-design.md` 为准。

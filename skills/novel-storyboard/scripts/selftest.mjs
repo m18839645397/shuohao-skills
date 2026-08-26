@@ -63,7 +63,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = JSON.parse(readFileSync(join(here, '../examples/渡口-storyboard.json'), 'utf8'));
 const SCRIPT = JSON.parse(readFileSync(join(here, '../../novel-script/examples/渡口-script.json'), 'utf8'));
 const OUTLINE = JSON.parse(readFileSync(join(here, '../../novel-outline/examples/渡口-outline.json'), 'utf8'));
-const CAST = JSON.parse(readFileSync(join(here, '../../novel-characters/examples/渡口-cast.json'), 'utf8'));
+const CAST = { characters: OUTLINE.characters.map((c) => ({
+  name: c.name,
+  aliases: c.name === '老周' ? ['老伯'] : [],
+})) };
 const ART = JSON.parse(readFileSync(join(here, '../../novel-art/examples/渡口-art.json'), 'utf8'));
 const CTX = { script: SCRIPT, outline: OUTLINE, cast: CAST, art: ART };
 

@@ -28,9 +28,12 @@ const FIXTURE = JSON.parse(readFileSync(join(here, '..', 'examples', '渡口-art
 const OUTLINE = JSON.parse(
   readFileSync(join(here, '..', '..', 'novel-outline', 'examples', '渡口-outline.json'), 'utf8'),
 );
-const CAST = JSON.parse(
-  readFileSync(join(here, '..', '..', 'novel-characters', 'examples', '渡口-cast.json'), 'utf8'),
-);
+const CAST = { characters: [
+  { name: '沈知微', aliases: ['姑娘'] },
+  { name: '陆行远', aliases: ['陆先生'] },
+  { name: '老周', aliases: ['老伯'] },
+  { name: '胡二爷', aliases: ['货郎'] },
+] };
 
 let passed = 0;
 function ok(cond, msg) {

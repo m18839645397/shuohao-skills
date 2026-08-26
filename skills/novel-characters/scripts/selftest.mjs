@@ -4,15 +4,19 @@
 //   node scripts/selftest.mjs
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   CHUNK_SIZE,
   MAX_CHUNKS,
   SUPPORTED_UI_LANGS,
+  DESIGN_MODE,
+  IDENTITY_ANCHOR_SCALES,
+  IDENTITY_ANCHOR_TYPES,
+  IDENTITY_BUDGETS,
+  IDENTITY_CONTRAST_AXES,
   applyMerges,
+  applyDesignMatrix,
   assembleCast,
+  buildIdentityPrompt,
   buildGraph,
   chunkText,
   mergeCandidates,
@@ -31,13 +35,105 @@ import {
   validateCast,
 } from './novel-characters.mjs';
 
-const here = dirname(fileURLToPath(import.meta.url));
-const examples = join(here, '..', 'examples');
-// chunkText 内部会把 \r\n 规范成 \n 再切块。这里读进来先规范一次，否则 Windows 上
-// （git 默认 core.autocrlf 把 .txt 检出成 CRLF）拿原始文本当比对基准，
-// 「块内容来自原文」「覆盖全文」两条会假失败——issue #8。
-const SOURCE = readFileSync(join(examples, '渡口.txt'), 'utf8').replace(/\r\n/g, '\n');
-const CAST = JSON.parse(readFileSync(join(examples, '渡口-cast.json'), 'utf8')).characters;
+const SOURCE = `寒站入夜后只剩一盏煤油灯。林雁抱着蓝布包站在站牌下，袖口补丁被雨水浸深。
+周砚倚着关闭的售票窗，右眉旧伤在灯下断开，始终把左手藏在长外套里。
+乔叔弯腰添煤，灰白胡茬上挂着煤灰。他说：“末班车不会来了。”
+卖药郎挑着药箱跑进棚下，铜铃一路乱响。他咧嘴说：“路断了，人可不能断药。”
+林雁只答：“我等的不是车。”周砚抬眼看她，乔叔把炉门慢慢合上。`;
+
+const SHEET_LAYOUT = `${STYLE_PRESETS.realistic.render}. ONE 16:9 landscape canvas divided by thin hairline rules. LEFT ZONE occupies about 34% of the canvas width with one front-facing bust portrait. BOTH SHOULDERS ARE FULLY VISIBLE; do not fade, vignette or round off the bottom edge. Visible pores, wet specular highlight in the eyes, slightly asymmetric brows, flyaway hair strands, visible weave in every garment and self-shadow inside weighted folds. LIGHTING IN THE LEFT ZONE ONLY: a soft directional key with natural falloff and ambient occlusion under the chin and collar. RIGHT-TOP ZONE contains three FULL-BODY views of the SAME person, front, side and back, whose faces must match the bust portrait exactly. PROPORTIONS ARE CRITICAL: equal height and head-to-body ratio, no stretching, squashing or foreshortening. LIGHTING IN THE RIGHT ZONES: flat even orthographic lighting with no cast shadows. RIGHT-BOTTOM ZONE contains isolated signature-anchor details. If they do not fit, continue them in a narrow vertical column down the right-hand edge; the detail studies give way, not the figures. Plain pure white background.`;
+const NEGATIVE = 'plastic or waxy skin, poreless doll face, perfectly symmetrical face, dead flat eyes, stiff mannequin posing, extra fingers, malformed hands, text, watermark, busy patterned background';
+const STYLE_LABEL = '半写实厚涂插画，冷调低饱和民国配色，晨雾柔光';
+
+const makeCard = ({ name, aliases, importance, oneLiner, evidence, identity, appearance, prompt, voice, relationships }) => ({
+  name, aliases, importance, oneLiner,
+  persona: {
+    gender: name === '林雁' ? '女' : '男', ageRange: name === '林雁' ? '十九岁' : '成年', identity,
+    appearance, personality: ['克制', '警觉', '务实'], temperament: '言行简短，习惯先观察再行动。',
+    motivation: '在封闭的寒夜里完成自己必须完成的事。', arc: '从彼此戒备走向有限合作。', relationships, evidence,
+  },
+  image: {
+    style: STYLE_LABEL, prompt, promptLocal: '民国寒夜中的现实主义角色设计，身份与服装均有明确时代依据。',
+    negativePrompt: NEGATIVE, tags: ['semi-realistic', 'painterly', 'character sheet', 'period costume'], sheet: `${SHEET_LAYOUT} ${prompt}`,
+  },
+  voice,
+});
+
+const CAST = [
+  makeCard({
+    name: '林雁', aliases: ['小雁'], importance: 'protagonist', oneLiner: '在停运寒站等待一个人的十九岁女孩。',
+    evidence: ['林雁抱着蓝布包站在站牌下，袖口补丁被雨水浸深。'], identity: '等待接头人的年轻旅客',
+    appearance: '长椭圆脸，左眉略高，窄肩收拢，蓝布包始终贴在胸前。', relationships: [{ name: '周砚', relation: '互相试探的陌生旅客' }],
+    prompt: 'A nineteen-year-old East Asian woman in 1930s northern China, long oval face, slightly higher left eyebrow, tightly focused eyes, narrow inward-folding shoulders, navy-blue cotton coat with one rain-darkened repaired cuff, holding a blue cloth parcel flat against her chest, restrained three-quarter portrait, realistic period garment construction and guarded posture.',
+    voice: { timbre: '清冷偏薄的女中音', pitch: '中高', pace: '稍慢，停顿克制', accent: '标准普通话', emotion: '警觉而坚定', referenceHint: '像深夜电台里压低声音的年轻播音员', prompt: 'Nineteen-year-old female, clear restrained mezzo-soprano, mid-high pitch, light chest support, narrow dynamic range. Quiet volume, measured pace, level phrase endings. Standard Mandarin. Guarded and determined.' },
+  }),
+  makeCard({
+    name: '周砚', aliases: ['周先生'], importance: 'major', oneLiner: '在关闭售票窗前等待消息的沉默男人。',
+    evidence: ['周砚倚着关闭的售票窗，右眉旧伤在灯下断开，始终把左手藏在长外套里。'], identity: '身份不明的外地旅客',
+    appearance: '高瘦直立，右眉被旧伤截断，深色外套形成单一垂直轮廓。', relationships: [{ name: '林雁', relation: '彼此怀疑又不得不合作' }],
+    prompt: 'A tall lean East Asian man in his early thirties at a 1930s northern Chinese rail halt, rigid vertical posture, angular face, diagonal scar interrupting the right eyebrow, heavy-lidded eyes, left hand hidden inside a long charcoal wool coat, narrow dark trouser line and worn leather boots, controlled stillness against the closed ticket window.',
+    voice: { timbre: '干燥低沉的男中音', pitch: '低', pace: '缓慢，句尾下落', accent: '轻微北方口音', emotion: '冷静而戒备', referenceHint: '像长期夜班的铁路调度员', prompt: 'Early-thirties male, dry low baritone, low pitch, firm chest resonance, restrained dynamics. Low volume, slow deliberate pace, falling cadence. Light northern Mandarin accent. Controlled and suspicious.' },
+  }),
+  makeCard({
+    name: '乔叔', aliases: ['老乔'], importance: 'major', oneLiner: '守着废弃小站煤炉的老扳道工。',
+    evidence: ['乔叔弯腰添煤，灰白胡茬上挂着煤灰。'], identity: '寒站老扳道工',
+    appearance: '弯背形成弧形剪影，灰白短胡茬沾煤灰，厚帆布工装磨亮在肘部。', relationships: [{ name: '卖药郎', relation: '熟悉山路消息的老相识' }],
+    prompt: 'An elderly East Asian railway switchman in 1930s northern China, deeply bowed crescent silhouette from decades of track work, broad weather-cut face, ash-grey stubble dusted with coal, one clouded eye, heavy brown canvas work jacket polished at elbows and cuffs, iron coal shovel held close to the stove, sturdy layered winter clothing and grounded labourer anatomy.',
+    voice: { timbre: '粗粝有煤尘感的老年男低音', pitch: '低', pace: '慢而均匀', accent: '浓厚山地方言', emotion: '疲惫但可靠', referenceHint: '像守了几十年小站的老工人', prompt: 'Elderly male, coarse bass-baritone, low pitch, gravelly throat resonance, limited breath, narrow dynamics. Moderate-low volume, slow even pace. Strong mountain-region Mandarin accent. Weary and dependable.' },
+  }),
+  makeCard({
+    name: '卖药郎', aliases: ['药郎'], importance: 'supporting', oneLiner: '挑着响铃药箱闯进寒站的山路行商。',
+    evidence: ['卖药郎挑着药箱跑进棚下，铜铃一路乱响。'], identity: '走山路的年轻药材商',
+    appearance: '圆肩外张、短腿结实，两只木药箱和铜铃构成横向剪影。', relationships: [{ name: '乔叔', relation: '交换山路消息的老相识' }],
+    prompt: 'A compact East Asian travelling medicine seller in late-1930s northern China, round outward-spreading shoulders over short sturdy legs, lively broad face, wind-reddened cheeks, cropped black hair, layered ochre padded jacket with visible repairs, carrying two weathered wooden medicine chests on a shoulder pole with small brass bells, energetic stride and practical mountain-road footwear.',
+    voice: { timbre: '明亮带笑的青年男高音', pitch: '中高', pace: '快速有弹性', accent: '山地口音，元音开阔', emotion: '热络而机敏', referenceHint: '像赶集时穿过人群叫卖的药材商', prompt: 'Young adult male, bright ringing tenor, mid-high pitch, forward resonance, strong breath support, broad dynamics. Carrying volume, quick springy pace, rising turns. Mountain-region Mandarin accent. Sociable and alert.' },
+  }),
+];
+
+const IDENTITY_SPECS = {
+  林雁: [
+    ['silhouette', 'silhouette', 'a narrow inward-folding silhouette with both elbows protecting the blue parcel'],
+    ['face', 'close', 'a long oval face with a slightly higher left eyebrow and tightly focused eyes'],
+    ['costume', 'medium', 'a navy-blue cotton coat with one rain-darkened repaired cuff and a severe straight collar'],
+    ['prop', 'medium', 'a blue cloth parcel held flat against the chest as a protective body shield'],
+  ],
+  周砚: [
+    ['silhouette', 'silhouette', 'a tall unbroken vertical silhouette with the shoulders held unnaturally still'],
+    ['face', 'close', 'a lean angular face with a diagonal scar interrupting the right eyebrow'],
+    ['gesture', 'medium', 'the left hand remains hidden inside the long charcoal coat during every exchange'],
+  ],
+  乔叔: [
+    ['silhouette', 'silhouette', 'a deeply bowed crescent silhouette shaped by decades of railway labour'],
+    ['face', 'close', 'a weather-cut elderly face with one clouded eye and coal caught in grey stubble'],
+    ['costume', 'medium', 'a heavy brown canvas work jacket polished pale across both elbows and cuffs'],
+  ],
+  卖药郎: [
+    ['silhouette', 'silhouette', 'a round outward-spreading silhouette balanced over short sturdy legs and a shoulder pole'],
+    ['prop', 'medium', 'two weathered medicine chests with small brass bells marking every broad movement'],
+  ],
+};
+const importantFixtureCharacters = CAST.filter((c) => ['protagonist', 'major'].includes(c.importance));
+for (const c of CAST) {
+  const anchors = IDENTITY_SPECS[c.name].map(([type, scale, prompt]) => ({ type, scale, prompt }));
+  const target = importantFixtureCharacters.find((x) => x.name !== c.name);
+  c.visualIdentity = {
+    designThesis: `${c.name}的造型从剧情功能出发，在现实年代约束内形成稳定识别。`,
+    anchors,
+    contrastAgainst: target && ['protagonist', 'major'].includes(c.importance)
+      ? [{ target: target.name, axes: ['silhouette', 'costume'], rule: '两者在外轮廓开合与服装结构上保持清楚反差。' }]
+      : [],
+  };
+  const phrases = anchors.map((a) => a.prompt).join('. ');
+  c.image.prompt += `. ${phrases}.`;
+  c.image.sheet += `. MANDATORY IDENTITY ANCHORS: ${phrases}.`;
+}
+
+const CAST_DOC = {
+  source: '寒站', lang: 'zh', style: 'realistic', designMode: DESIGN_MODE,
+  designPrinciple: '以收拢与外张、直线与圆形建立主角组对照，细节服从剧情功能。',
+  summary: '民国北方的一处小站因山路中断而停运。四个互不信任的人被困在煤油灯下，各自等待不同的消息。随着夜色加深，他们不得不交换线索并重新判断彼此。',
+  characters: CAST,
+};
 
 let passed = 0;
 function ok(condition, label) {
@@ -59,7 +155,7 @@ eq(chunkText('').length, 0, '空文本不产生块');
 eq(chunkText('   \n  ').length, 0, '纯空白不产生块');
 eq(chunkText(SOURCE).length, 1, '短故事只有一块');
 
-const long = SOURCE.repeat(150);
+const long = SOURCE.repeat(Math.ceil((CHUNK_SIZE * 2.2) / SOURCE.length));
 const chunks = chunkText(long);
 ok(chunks.length > 1, '长文本会切成多块');
 ok(chunks.every((c) => c.length <= CHUNK_SIZE), `没有块超过 CHUNK_SIZE(${CHUNK_SIZE})`);
@@ -70,28 +166,28 @@ ok(chunks[1].includes(chunks[0].slice(-100).slice(0, 40)), '相邻块有重叠')
 const covered = chunks.reduce((sum, c) => sum + c.length, 0);
 ok(covered >= long.length, '所有块加起来覆盖全文（含重叠）');
 
-const huge = SOURCE.repeat(1500);
+const huge = SOURCE.repeat(Math.ceil((CHUNK_SIZE * (MAX_CHUNKS + 2)) / SOURCE.length));
 ok(chunkText(huge).length <= MAX_CHUNKS, `超长文本被 MAX_CHUNKS(${MAX_CHUNKS}) 截断而不是无限切`);
 
 /* ---------------- mergeRoster ---------------- */
 
 // 跨块用不同称呼发现同一个人，必须收敛成一条
 const merged = mergeRoster([
-  [{ name: '陆行远', aliases: ['陆'], note: '瘦，颧骨高。', quotes: ['他的脸很瘦，颧骨很高'] }],
-  [{ name: '陆', aliases: [], note: '眉骨有疤。', quotes: ['右边眉骨上有一道两寸长的旧疤。', '他的脸很瘦，颧骨很高'] }],
-  [{ name: '沈知微', aliases: ['姑娘'], note: '两条辫子。', quotes: [] }],
+  [{ name: '周砚', aliases: ['周'], note: '瘦，颧骨高。', quotes: ['他的脸很瘦，颧骨很高'] }],
+  [{ name: '周', aliases: [], note: '眉骨有疤。', quotes: ['右边眉骨上有一道两寸长的旧疤。', '他的脸很瘦，颧骨很高'] }],
+  [{ name: '林雁', aliases: ['姑娘'], note: '短发。', quotes: [] }],
 ]);
 eq(merged.length, 2, '别名跨块归并');
-const lu = merged.find((c) => c.name === '陆行远');
+const lu = merged.find((c) => c.name === '周砚');
 ok(lu, '保留出现次数最多的规范名');
 eq(lu.notes.length, 2, 'notes 累加');
-ok(lu.aliases.includes('陆'), '别名被记录');
+ok(lu.aliases.includes('周'), '别名被记录');
 eq(lu.quotes.length, 2, 'quotes 合并且去重');
 
 // 先看到别名、后看到本名，也要能合并
 const reverse = mergeRoster([
   [{ name: '姑娘', aliases: [], note: 'a', quotes: [] }],
-  [{ name: '沈知微', aliases: ['姑娘'], note: 'b', quotes: [] }],
+  [{ name: '林雁', aliases: ['姑娘'], note: 'b', quotes: [] }],
 ]);
 eq(reverse.length, 1, '别名先出现也能归并');
 eq(reverse[0].notes.length, 2, '归并后两条 note 都在');
@@ -119,24 +215,24 @@ eq(mergeRoster([[{ note: '没名字' }]]).length, 0, '没有 name 的条目被�
 
 // 精确匹配的盲区：两块用了不同称呼、没有共同键，机械归并留成两个人
 const twoLu = mergeRoster([
-  [{ name: '陆行远', aliases: [], note: '瘦，颧骨高。', quotes: ['q1'] }],
-  [{ name: '陆', aliases: [], note: '眉骨有疤。', quotes: ['q2'] }],
-  [{ name: '沈知微', aliases: [], note: '两条辫子。', quotes: [] }],
+  [{ name: '周砚', aliases: [], note: '瘦，颧骨高。', quotes: ['q1'] }],
+  [{ name: '周', aliases: [], note: '眉骨有疤。', quotes: ['q2'] }],
+  [{ name: '林雁', aliases: [], note: '短发。', quotes: [] }],
 ]);
 eq(twoLu.length, 3, '没有共同键归并不了——这就是候选机制要兜的洞');
 const cands = mergeCandidates(twoLu);
 eq(cands.length, 1, '名字包含关系被标成候选');
 ok(cands[0].reason.includes('⊂'), '候选带理由');
 ok(
-  [cands[0].a, cands[0].b].includes('陆行远') && [cands[0].a, cands[0].b].includes('陆'),
+  [cands[0].a, cands[0].b].includes('周砚') && [cands[0].a, cands[0].b].includes('周'),
   '候选指向正确的两个人',
 );
 
 // 别名也参与候选
 eq(
   mergeCandidates([
-    { name: '老周', aliases: ['摆渡人'], notes: [], quotes: [] },
-    { name: '渡口的摆渡人', aliases: [], notes: [], quotes: [] },
+    { name: '乔叔', aliases: ['扳道工'], notes: [], quotes: [] },
+    { name: '寒站的扳道工', aliases: [], notes: [], quotes: [] },
   ]).length,
   1,
   '别名的包含关系也算候选',
@@ -162,10 +258,10 @@ eq(
 eq(mergeCandidates([twoLu[0]]).length, 0, '单人不产生候选');
 
 // 复核结果落地
-const applied = applyMerges(twoLu, [{ keep: '陆行远', absorb: ['陆'] }]);
+const applied = applyMerges(twoLu, [{ keep: '周砚', absorb: ['周'] }]);
 eq(applied.length, 2, '合并后少一个人');
-const luMerged = applied.find((c) => c.name === '陆行远');
-ok(luMerged.aliases.includes('陆'), '被吸收的名字变成别名');
+const luMerged = applied.find((c) => c.name === '周砚');
+ok(luMerged.aliases.includes('周'), '被吸收的名字变成别名');
 eq(luMerged.notes.length, 2, '被吸收的 notes 并入');
 eq(luMerged.quotes.length, 2, '被吸收的 quotes 并入');
 eq(mergeCandidates(applied).length, 0, '合并后候选清空');
@@ -173,22 +269,22 @@ eq(mergeCandidates(applied).length, 0, '合并后候选清空');
 // keep 用别名定位也行
 const viaAlias = applyMerges(
   [
-    { name: '老周', aliases: ['老伯'], notes: ['a'], quotes: [] },
-    { name: '摆渡人', aliases: [], notes: ['b'], quotes: [] },
+    { name: '乔叔', aliases: ['老乔'], notes: ['a'], quotes: [] },
+    { name: '扳道工', aliases: [], notes: ['b'], quotes: [] },
   ],
-  [{ keep: '老伯', absorb: ['摆渡人'] }],
+  [{ keep: '老乔', absorb: ['扳道工'] }],
 );
 eq(viaAlias.length, 1, 'keep 用别名定位');
-eq(viaAlias[0].name, '老周', '规范名不变');
+eq(viaAlias[0].name, '乔叔', '规范名不变');
 eq(viaAlias[0].notes.length, 2, '两边 notes 都在');
 
 // 找不到的人必须报错——静默跳过会让调用方以为合并成功了
-throws(() => applyMerges(twoLu, [{ keep: '不存在', absorb: ['陆'] }]), /找不到/, 'keep 找不到要报错');
-throws(() => applyMerges(twoLu, [{ keep: '陆行远', absorb: ['不存在'] }]), /找不到/, 'absorb 找不到要报错');
+throws(() => applyMerges(twoLu, [{ keep: '不存在', absorb: ['周'] }]), /找不到/, 'keep 找不到要报错');
+throws(() => applyMerges(twoLu, [{ keep: '周砚', absorb: ['不存在'] }]), /找不到/, 'absorb 找不到要报错');
 // 抛错前不许污染入参：部分合并成功、后面才发现找不到的人，入参也要原样
 const pristine = JSON.stringify(twoLu);
 throws(
-  () => applyMerges(twoLu, [{ keep: '陆行远', absorb: ['陆'] }, { keep: '不存在', absorb: ['沈知微'] }]),
+  () => applyMerges(twoLu, [{ keep: '周砚', absorb: ['周'] }, { keep: '不存在', absorb: ['林雁'] }]),
   /找不到/,
   '部分成功再失败也要报错',
 );
@@ -206,16 +302,22 @@ eq(
 /* ---------------- seedFromOutline（大纲是角色的上游） ---------------- */
 
 {
-  // 拿真实的 outline 样例当夹具。这个函数的契约就是「吃 novel-outline 的产出」，
-  // 手捏一份假 outline 测不到真实的字段形状。novel-art 与 novel-script 的自测
-  // 读的是同一份文件，同仓库上游样例共享是既有做法。
-  const outlinePath = join(here, '..', '..', 'novel-outline', 'examples', '渡口-outline.json');
-  const outline = JSON.parse(readFileSync(outlinePath, 'utf8'));
+  const outline = {
+    source: '寒站',
+    characters: [
+      { id: 'C01', name: '林雁', tier: 'lead', role: '女主', from: ['林雁'], arc: '从独自等待到接受有限合作。' },
+      { id: 'C02', name: '周砚', tier: 'lead', role: '主要对手', from: ['周砚'], arc: '从隐藏立场到交出一条关键信息。' },
+      { id: 'C03', name: '乔叔', tier: 'support', role: '守站人', from: ['乔叔'], arc: '维持小站秩序并迫使众人面对现实。' },
+      { id: 'C04', name: '卖药郎', tier: 'functional', role: '消息带入者', from: ['卖药郎'], arc: '带来山路中断的外部消息。' },
+    ],
+  };
   const seeded = seedFromOutline(outline);
 
   ok(seeded.characters.length === outline.characters.length, 'seed 出的角色数跟大纲一致');
   ok(seeded.source === outline.source, 'source 从大纲继承');
   ok(seeded.style === 'realistic', '画风取默认值，大纲里没有这个信息');
+  ok(seeded.designMode === DESIGN_MODE, 'seed 默认开启群像视觉身份模式');
+  ok(seeded.designPrinciple === '', '群像设计原则留空待群像设计趟填写');
   ok(seeded.summary === '', 'summary 留空——那是读完原文才写得出来的');
 
   // 分档映射：大纲拍板的轻重，这一层不推翻
@@ -239,6 +341,7 @@ eq(
   ok(first.aliases.length === 0, '别名留空——大纲里没有，要读原文才知道');
   ok(first.oneLiner === '', '一句话留空');
   ok(first.image.prompt === '' && first.voice.prompt === '', '形象与音色提示词留空');
+  ok(first.visualIdentity.designThesis === '' && first.visualIdentity.anchors.length === 0, '视觉身份留空待群像设计趟填写');
   ok(first.persona.appearance === '' && first.persona.evidence.length === 0, '外貌与引文留空');
 
   // 骨架不是成品：直接校验必然报字段缺失，这是预期行为，跟 art / script 的 seed 一致
@@ -271,23 +374,44 @@ eq(asm.summary, '摘要', 'assemble 带摘要');
 eq(asm.characters.map((c) => c.name).join(''), 'BCDA', '按 importance 排序，同档保持传入顺序');
 ok(!('ui' in asm), '没有 ui 就不写这个键');
 
+{
+  const matrix = {
+    mode: DESIGN_MODE,
+    principle: '主角收拢而主要对手外张，所有设计保持民国水乡的现实质感。',
+    characters: [{
+      name: 'B',
+      visualIdentity: {
+        designThesis: '用收拢姿态表现警觉',
+        anchors: [{ type: 'silhouette', scale: 'silhouette', prompt: 'a narrow inward-folding silhouette with guarded shoulders' }],
+        contrastAgainst: [],
+      },
+    }],
+  };
+  const injected = applyDesignMatrix([{ name: 'A' }, { name: 'B' }], matrix);
+  ok(!injected[0].visualIdentity && injected[1].visualIdentity.designThesis.includes('收拢'), '群像矩阵只按名字向对应角色注入视觉身份');
+  const designed = assembleCast([{ name: 'B', importance: 'protagonist' }], { source: '书', designMatrix: matrix });
+  eq(designed.designMode, DESIGN_MODE, 'assemble 带群像视觉身份模式');
+  ok(designed.designPrinciple.includes('现实质感'), 'assemble 带群像设计原则');
+  ok(designed.characters[0].visualIdentity.anchors.length === 1, 'assemble 从矩阵注入签名锚点');
+}
+
 // 同档要按戏份序——CLI 按文件名读卡是 slug 字典序，order 就是用来纠正它的
 const byFilename = [
-  { name: '老周', importance: 'major' },      // 文件名序在前
-  { name: '沈知微', importance: 'protagonist' },
-  { name: '陆行远', importance: 'major' },     // 但戏份比老周重
+  { name: '乔叔', importance: 'major' },      // 文件名序在前
+  { name: '林雁', importance: 'protagonist' },
+  { name: '周砚', importance: 'major' },       // 但戏份比乔叔重
 ];
-const ordered = assembleCast(byFilename, { source: 'x', order: ['沈知微', '陆行远', '老周'] });
-eq(ordered.characters.map((c) => c.name).join('→'), '沈知微→陆行远→老周', '同档按 order 的戏份顺序');
+const ordered = assembleCast(byFilename, { source: 'x', order: ['林雁', '周砚', '乔叔'] });
+eq(ordered.characters.map((c) => c.name).join('→'), '林雁→周砚→乔叔', '同档按 order 的戏份顺序');
 eq(
   assembleCast(byFilename, { source: 'x' }).characters.map((c) => c.name).join('→'),
-  '沈知微→老周→陆行远',
+  '林雁→乔叔→周砚',
   '不给 order 才退回传入顺序——这正是要修的文件名序',
 );
 // order 里没有的名字排同档末尾，不报错
 eq(
-  assembleCast(byFilename, { source: 'x', order: ['沈知微', '陆行远'] }).characters.map((c) => c.name).join('→'),
-  '沈知微→陆行远→老周',
+  assembleCast(byFilename, { source: 'x', order: ['林雁', '周砚'] }).characters.map((c) => c.name).join('→'),
+  '林雁→周砚→乔叔',
   'order 缺名字的排同档末尾',
 );
 ok('ui' in assembleCast([{ name: 'A' }], { source: 'x', ui: { copy: 'Copier' } }), '有 ui 翻译就带上');
@@ -300,7 +424,7 @@ eq(
 
 /* ---------------- slug ---------------- */
 
-eq(slug('胡二爷'), '胡二爷', '中文名原样保留');
+eq(slug('卖药郎'), '卖药郎', '中文名原样保留');
 eq(slug('a/b:c*d'), 'a-b-c-d', '路径危险字符被替换');
 eq(slug('  x  '), 'x', '两端空白被去掉');
 eq(slug(''), 'character', '空名有兜底');
@@ -312,6 +436,62 @@ ok(validateCast([], SOURCE).length > 0, '空 cast 报错');
 
 const clone = () => JSON.parse(JSON.stringify(CAST));
 const hits = (cast, keyword) => validateCast(cast, SOURCE).filter((p) => p.includes(keyword)).length;
+
+const identityCast = () => clone();
+
+/* ---------------- 群像视觉身份 ---------------- */
+
+{
+  const designed = identityCast();
+  const options = { designMode: DESIGN_MODE, designPrinciple: '以收拢与外张、直线与圆形建立主角组对照，细节服从剧情功能。' };
+  eq(validateCast(designed, SOURCE, 'zh', 'realistic', options).length, 0, '群像视觉身份完整且锚点进入提示词时通过');
+  eq(IDENTITY_ANCHOR_TYPES.length, 5, '视觉身份覆盖剪影、面部、服装、姿态和道具五个维度');
+  eq(IDENTITY_ANCHOR_SCALES.join(','), 'silhouette,medium,close', '视觉身份覆盖三个识别距离');
+  eq(IDENTITY_CONTRAST_AXES.length, 6, '角色对照有六个可审计视觉轴');
+  eq(IDENTITY_BUDGETS.protagonist.min, 4, '主角至少四个签名锚点');
+  eq(IDENTITY_BUDGETS.minor.max, 2, '龙套最多两个签名锚点，避免全员奇装异服');
+  const prompt = buildIdentityPrompt(designed[0], 'realistic');
+  ok(prompt.includes(designed[0].visualIdentity.anchors[0].prompt), '身份锁定图提示词吃到签名锚点');
+  ok(prompt.includes('not a model sheet') && prompt.includes('same person'), '身份锁定图先锁身份，不直接赌完整三视图');
+}
+{
+  const designed = identityCast();
+  delete designed[0].visualIdentity;
+  ok(validateCast(designed, SOURCE, 'zh', 'realistic', { designMode: DESIGN_MODE, designPrinciple: '群像原则完整。' })
+    .some((x) => x.includes('缺少 visualIdentity')), '新模式下缺视觉身份被拦');
+}
+{
+  const designed = identityCast();
+  designed[0].visualIdentity.anchors.pop();
+  ok(validateCast(designed, SOURCE, 'zh', 'realistic', { designMode: DESIGN_MODE, designPrinciple: '群像原则完整。' })
+    .some((x) => x.includes('应为 4–5 项')), '主角签名锚点不足被 importance 分档拦截');
+}
+{
+  const designed = identityCast();
+  const anchor = designed[0].visualIdentity.anchors[0].prompt;
+  designed[0].image.sheet = designed[0].image.sheet.replace(anchor, 'a generic narrow silhouette');
+  ok(validateCast(designed, SOURCE, 'zh', 'realistic', { designMode: DESIGN_MODE, designPrinciple: '群像原则完整。' })
+    .some((x) => x.includes('没有逐字进入 image.sheet')), '签名锚点没有进入完整设定图提示词被拦');
+}
+{
+  const designed = identityCast();
+  designed[1].visualIdentity.contrastAgainst = [];
+  ok(validateCast(designed, SOURCE, 'zh', 'realistic', { designMode: DESIGN_MODE, designPrinciple: '群像原则完整。' })
+    .some((x) => x.includes('至少写一条 contrastAgainst')), '重要角色没有主动避开另一重要角色被拦');
+}
+{
+  const designed = identityCast();
+  const sourceAnchors = designed[1].visualIdentity.anchors;
+  designed[2].visualIdentity.anchors = sourceAnchors.map((x) => ({ ...x }));
+  const phrases = sourceAnchors.map((a) => a.prompt).join('. ');
+  designed[2].image.prompt += `. ${phrases}.`;
+  designed[2].image.sheet += `. ${phrases}.`;
+  ok(validateCast(designed, SOURCE, 'zh', 'realistic', { designMode: DESIGN_MODE, designPrinciple: '群像原则完整。' })
+    .some((x) => x.includes('签名锚点雷同')), '公共画风之外的角色签名锚点撞车被拦');
+}
+eq(validateCast(CAST, SOURCE, 'zh', 'realistic', {}).length, 0, '直接校验默认使用新群像视觉身份模式');
+ok(validateCast(CAST, SOURCE, 'zh', 'realistic', { designMode: null, designPrinciple: '' })
+  .some((x) => x.includes('designMode=(缺失)')), '缺 designMode 的数据直接拒绝');
 
 // 这四类是模型真实犯过的错，每一类都必须抓住
 let bad = clone();
@@ -355,13 +535,21 @@ eq(validateCast(CAST, null).length, 0, '不给原文时跳过引文校验');
 
 /* ---------------- render ---------------- */
 
-const md = renderMarkdown(CAST, '渡口');
-ok(md.includes('# 渡口 — 角色表'), 'Markdown 有标题');
+const md = renderMarkdown(CAST, '寒站');
+ok(md.includes('# 寒站 — 角色表'), 'Markdown 有标题');
 for (const c of CAST) ok(md.includes(`## ${c.name}`), `Markdown 包含 ${c.name}`);
 ok(md.includes('角色设定图提示词'), 'Markdown 含设定图提示词');
 ok(renderMarkdown(CAST, 'Ferry', '', 'en').includes('# Ferry — Cast'), 'Markdown 跟随语言参数');
+{
+  const designed = identityCast();
+  const mdIdentity = renderMarkdown(designed, '寒站', '', 'zh', null, '群像以直线与圆形形成对照。');
+  ok(mdIdentity.includes('视觉身份') && mdIdentity.includes('签名锚点'), 'Markdown 展示群像原则与角色签名锚点');
+  const htmlIdentity = renderHtml(designed, '寒站', '', 'zh', null, 'realistic', DESIGN_MODE, '群像以直线与圆形形成对照。');
+  ok(htmlIdentity.includes('class="blk identity"'), 'HTML 展示角色视觉身份块');
+  ok(htmlIdentity.includes('ensemble-signature') && htmlIdentity.includes('群像以直线与圆形形成对照'), 'HTML 导出 JSON 保留 designMode 与 designPrinciple');
+}
 
-const html = renderHtml(CAST, '渡口');
+const html = renderHtml(CAST, '寒站');
 ok(html.startsWith('<!doctype html>'), 'HTML 是完整文档');
 // 三栏工作台：顶栏 + 左栏角色列表 + 主区一次一个角色
 eq((html.match(/class="char[ "]/g) || []).length, CAST.length, `主区有 ${CAST.length} 个角色`);
@@ -408,7 +596,7 @@ eq((html.match(/class="rost on"/g) || []).length, 1, '左栏默认选中第一�
 // 音色只保留喂引擎的那一条：给人读的六项已经是结构化中文字段，
 // 再给一段中文散文，用户会复制错——这是这次修复的根因
 {
-  const html = renderHtml(CAST, { source: '渡口' });
+  const html = renderHtml(CAST, { source: '寒站' });
   ok(!html.includes('音色提示词（中文'), '报告里不再有中文音色提示词');
   ok(html.includes('音色提示词 · 喂 TTS 引擎用这条'), '音色提示词的标签写明用途');
   ok(html.includes('出图提示词 · 喂出图模型用这条'), '出图提示词的标签写明用途');
@@ -468,14 +656,14 @@ const evilHtml = renderHtml(evil, 'x');
 ok(!evilHtml.includes('<img src=x onerror'), '角色字段里的 HTML 被转义');
 
 // 故事摘要
-const DOC = JSON.parse(readFileSync(join(examples, '渡口-cast.json'), 'utf8'));
+const DOC = CAST_DOC;
 ok(DOC.summary && DOC.summary.trim(), '样例带故事摘要');
-ok(renderHtml(CAST, '渡口', DOC.summary).includes('class="synopsis'), 'HTML 顶部渲染摘要');
-ok(!renderHtml(CAST, '渡口', '').includes('class="synopsis'), '没有摘要时不留空壳');
-ok(renderMarkdown(CAST, '渡口', DOC.summary).includes('## 故事摘要'), 'Markdown 也带摘要');
-ok(renderHtml(CAST, '渡口', '<b>x</b>').includes('&lt;b&gt;'), '摘要里的 HTML 被转义');
+ok(renderHtml(CAST, '寒站', DOC.summary).includes('class="synopsis'), 'HTML 顶部渲染摘要');
+ok(!renderHtml(CAST, '寒站', '').includes('class="synopsis'), '没有摘要时不留空壳');
+ok(renderMarkdown(CAST, '寒站', DOC.summary).includes('## 故事摘要'), 'Markdown 也带摘要');
+ok(renderHtml(CAST, '寒站', '<b>x</b>').includes('&lt;b&gt;'), '摘要里的 HTML 被转义');
 // 摘要默认三行 + 渐隐，点一下展开
-const synHtml = renderHtml(CAST, '渡口', DOC.summary);
+const synHtml = renderHtml(CAST, '寒站', DOC.summary);
 ok(synHtml.includes('class="synopsis syn-clamp"'), '摘要默认是折叠态');
 ok(/\.syn-clamp p\{[^}]*-webkit-line-clamp:3/.test(synHtml), '摘要最多三行');
 ok(/\.syn-clamp p\{[^}]*mask-image:linear-gradient/.test(synHtml), '折起来的摘要底部渐隐');
@@ -486,14 +674,14 @@ ok(/scrollHeight <= body\.clientHeight/.test(synHtml), '摘要短到不用折叠
 /* ---------------- 导出 JSON ---------------- */
 
 // 导出的形状就是 cast.json，编辑完要能直接喂回 render
-const expHtml = renderHtml(CAST, '渡口', DOC.summary, 'zh', null, 'ghibli');
+const expHtml = renderHtml(CAST, '寒站', DOC.summary, 'zh', null, 'ghibli');
 ok(expHtml.includes('class="expo"'), '顶栏有导出按钮');
 ok(expHtml.includes('<script type="application/json" id="cast-data">'), '数据内嵌在报告里');
-ok(expHtml.includes('data-name="渡口-cast.json"'), '下载文件名跟着书名走');
+ok(expHtml.includes('data-name="寒站-cast.json"'), '下载文件名跟着书名走');
 
 const embedded = expHtml.match(/<script type="application\/json" id="cast-data">([\s\S]*?)<\/script>/)[1];
 const round = JSON.parse(embedded.replace(/\\u003c/g, '<'));
-eq(round.source, '渡口', '导出带书名');
+eq(round.source, '寒站', '导出带书名');
 eq(round.lang, 'zh', '导出带语言');
 eq(round.style, 'ghibli', '导出带画风');
 eq(round.summary, DOC.summary, '导出带故事摘要');
@@ -516,7 +704,7 @@ ok('ui' in JSON.parse(renderHtml(CAST, 'x', '', 'fr', { copy: 'Copier' }).match(
 
 /* ---------------- 关系图谱 ---------------- */
 
-// 别名要能连上（老周被叫「老伯」），同一对人只连一条边，指向没画像的人算 dangling
+// 别名要能连上，同一对人只连一条边，指向没画像的人算 dangling
 const G = buildGraph([
   { name: 'A', aliases: [], persona: { relationships: [{ name: 'B的绰号', relation: 'r1' }] } },
   { name: 'B', aliases: ['B的绰号'], persona: { relationships: [{ name: 'A', relation: 'r2' }] } },
@@ -532,7 +720,7 @@ eq(
 );
 ok(buildGraph([{ name: 'A', aliases: [], persona: {} }]).edges.length === 0, '没有 relationships 也不炸');
 
-const graphHtml = renderHtml(CAST, '渡口');
+const graphHtml = renderHtml(CAST, '寒站');
 ok(graphHtml.includes('class="graph'), '有关系图谱视图');
 ok(graphHtml.includes('class="gtoggle"'), '左栏有图谱入口');
 // 顶栏的搜索图标也是 svg，所以要卡到 .graph-canvas 里面那张，否则测了个寂寞
@@ -596,8 +784,8 @@ ok(/@media print\{[\s\S]*\.pr p\{display:block!important/.test(css), '打印时�
 
 /* ---------------- 多语言 ---------------- */
 
-const zh = renderHtml(CAST, '渡口', DOC.summary, 'zh');
-const en = renderHtml(CAST, 'Ferry', 'A misty river crossing.', 'en');
+const zh = renderHtml(CAST, '寒站', DOC.summary, 'zh');
+const en = renderHtml(CAST, 'Cold Station', 'Four strangers wait through a closed mountain night.', 'en');
 
 ok(zh.includes('lang="zh"'), 'zh 报告的 html lang 正确');
 ok(en.includes('lang="en"'), 'en 报告的 html lang 正确');
@@ -618,7 +806,7 @@ eq(strings('nope').synopsis, strings('en').synopsis, 'strings 未知码退回 en
 for (const l of ['zh', 'en', 'ja']) ok(SUPPORTED_UI_LANGS.includes(l), `内置 ${l} 界面`);
 
 // 日语内置
-const ja = renderHtml(CAST, '渡し場', 'あらすじの本文', 'ja');
+const ja = renderHtml(CAST, '寒駅', 'あらすじの本文', 'ja');
 ok(ja.includes('lang="ja"'), 'ja 报告的 html lang 正确');
 ok(ja.includes('あらすじ') && ja.includes('>主役<'), 'ja 界面用日文');
 ok(ja.includes('登場人物 · 出番順'), 'ja 的角色列表标题翻译了');
@@ -654,6 +842,10 @@ for (const c of enCast) {
   c.voice.accent = 'neutral';
   c.voice.emotion = 'weary';
   c.voice.referenceHint = 'like a night-shift radio host';
+  c.visualIdentity.designThesis = 'Translate the dramatic function into a stable, production-readable visual identity.';
+  for (const contrast of c.visualIdentity.contrastAgainst) {
+    contrast.rule = 'Keep the two characters distinct in silhouette opening and costume structure.';
+  }
 }
 ok(
   validateCast(enCast, SOURCE, 'en').filter((p) => p.includes('应为')).length === 0,

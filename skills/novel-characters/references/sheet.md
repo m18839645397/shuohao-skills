@@ -13,7 +13,7 @@
 │          │   正视    侧视    背视       │
 │  半身像   │                            │
 │ （证件照） ├────────────────────────────┤
-│  面部基准  │  细节 · 细节 · 细节 · 细节   │
+│  面部基准  │  按 importance 放 1–5 个签名细节 │
 │   ~34%   │                            │
 └──────────┴────────────────────────────┘
                     16:9
@@ -22,6 +22,18 @@
 提示词字段 `image.sheet`，落到 `./images/<slug>-sheet.png`。
 
 左栏的半身像是**面部设计的基准**，右栏三视图的脸照着它画。提示词里要明确要求两边一致，否则一张图里会出现两个长相。
+
+## 重要角色先锁身份
+
+`protagonist` / `major` 不直接从文字赌完整三视图：
+
+1. 运行 `identity-prompt <cast.json> <角色名或 id>` 取得身份锁定提示词。
+2. 用该提示词生成 2–3 个候选，选定一张为 `images/<slug>-identity.png`。
+3. 生成完整 sheet 时，同时挂该角色自己的 identity 图作为参考；明确要求三视图只展开这个已选身份。
+
+`supporting` / `minor` 默认直接生成 sheet。额外调用只花在重要角色上。
+
+身份锁定图和完整 sheet 都必须落实 `visualIdentity.anchors`。锚点负责“这个人是谁”，风格预设只负责“这部片怎么画”，不要混成一层。
 
 ---
 
@@ -90,14 +102,16 @@ env -u NODE_OPTIONS "$CODEX" exec --skip-git-repo-check --sandbox workspace-writ
 
 同一批角色各自独立出图，**画风可能有差异**。早期用「扁平矢量卡通」时漂得很厉害——同一批出成动画感／半写实／水墨写实三种，摆在一起不像同一部片子。换成明确的风格预设（见 `style-presets.md`）后好了很多，但不能保证完全一致。
 
-想压住的话，把**第一个角色的成图当风格参考**喂给后面几个（codex 的 `-i/--image` 就是干这个的）：
+想压住的话，优先使用独立的画风材质板。没有材质板时才把**第一个角色的成图当风格参考**喂给后面几个（codex 的 `-i/--image` 就是干这个的），并明确只复制渲染方式：
 
 **用 `-i` 时 prompt 必须走 stdin**（见下面「变长参数」）：
 
 ```bash
 printf '%s' "$PROMPT
 Match the art style, line weight, shading and colour treatment of the reference
-image exactly — these characters must belong to the same production." \
+image exactly — these characters must belong to the same production.
+Do not copy facial geometry, hairstyle, body proportions, posture, costume
+silhouette, palette or accessories from the reference character." \
 | "$CODEX" exec --skip-git-repo-check --sandbox workspace-write \
     -i ./images/<第一个角色>-sheet.png
 ```

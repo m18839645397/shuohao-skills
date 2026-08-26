@@ -296,6 +296,7 @@ const STRINGS = {
       style: '画风',
       prompt: '出图提示词 · 喂出图模型用这条', promptLocal: '出图提示词（中文对照）',
       negative: '反向提示词', sheet: '角色设定图提示词 EN',
+      identity: '视觉身份', designThesis: '设计命题', anchors: '签名锚点', contrast: '角色对照',
     },
     voice: {
       timbre: '音色', pitch: '音高', pace: '语速', accent: '口音',
@@ -349,6 +350,7 @@ const STRINGS = {
       style: 'Style',
       prompt: 'Image prompt · feed this to the image model', promptLocal: 'Image prompt (local translation)',
       negative: 'Negative prompt', sheet: 'Model sheet prompt',
+      identity: 'Visual identity', designThesis: 'Design thesis', anchors: 'Signature anchors', contrast: 'Cast contrast',
     },
     voice: {
       timbre: 'Timbre', pitch: 'Pitch', pace: 'Pace', accent: 'Accent',
@@ -401,6 +403,7 @@ const STRINGS = {
       style: '画風',
       prompt: '画像プロンプト · 画像モデルにはこれを', promptLocal: '画像プロンプト（対訳）',
       negative: 'ネガティブプロンプト', sheet: 'キャラ設定画プロンプト EN',
+      identity: '視覚的アイデンティティ', designThesis: 'デザイン命題', anchors: '識別アンカー', contrast: 'キャラクター対比',
     },
     voice: {
       timbre: '声質', pitch: '音域', pace: '話速', accent: '訛り',
@@ -528,6 +531,7 @@ export function seedFromOutline(outline) {
         arc: c?.arc ?? '',
         relationships: [], evidence: [],
       },
+      visualIdentity: { designThesis: '', anchors: [], contrastAgainst: [] },
       image: { style: '', prompt: '', promptLocal: '', negativePrompt: '', tags: [], sheet: '' },
       voice: { timbre: '', pitch: '', pace: '', accent: '', emotion: '', prompt: '', referenceHint: '' },
       ...(note ? { seedNote: note } : {}),
@@ -537,6 +541,8 @@ export function seedFromOutline(outline) {
     source: outline?.source ?? '',
     lang: outline?.lang ?? DEFAULT_LANG,
     style: DEFAULT_STYLE,
+    designMode: DESIGN_MODE,
+    designPrinciple: '',
     summary: '',
     characters,
   };
@@ -547,6 +553,17 @@ export function seedFromOutline(outline) {
 /* ------------------------------------------------------------------ */
 
 const IMPORTANCE = ['protagonist', 'major', 'supporting', 'minor'];
+/** 群像视觉身份：当前流程强制使用，缺失身份矩阵直接拒绝。 */
+export const DESIGN_MODE = 'ensemble-signature';
+export const IDENTITY_ANCHOR_TYPES = ['silhouette', 'face', 'costume', 'gesture', 'prop'];
+export const IDENTITY_ANCHOR_SCALES = ['silhouette', 'medium', 'close'];
+export const IDENTITY_CONTRAST_AXES = ['silhouette', 'face', 'costume', 'palette', 'gesture', 'prop'];
+export const IDENTITY_BUDGETS = {
+  protagonist: { min: 4, max: 5 },
+  major: { min: 3, max: 4 },
+  supporting: { min: 2, max: 3 },
+  minor: { min: 1, max: 2 },
+};
 /** 中日韩表意文字与假名、谚文——图像/TTS 提示词里出现就说明串语言了。 */
 const CJK = /[㐀-鿿぀-ヿ가-힯]/;
 /** 假名单独一条：用来把日文和中文区分开。 */
@@ -560,12 +577,51 @@ const HUMAN_VOICE_FIELDS = ['timbre', 'pitch', 'pace', 'accent', 'emotion', 'ref
 
 const normalise = (s) => String(s).replace(/\s+/g, '');
 
+const englishWords = (s) => new Set(String(s ?? '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2));
+const promptSimilarity = (a, b, minWords = 8) => {
+  const A = englishWords(a); const B = englishWords(b);
+  if (A.size < minWords || B.size < minWords) return 0;
+  const inter = [...A].filter((w) => B.has(w)).length;
+  return inter / new Set([...A, ...B]).size;
+};
+
+/** 重要角色先用这条生成身份锁定图，再拿 identity.png 作为自身参考展开完整设定表。 */
+export function buildIdentityPrompt(character, style = DEFAULT_STYLE) {
+  const identity = character?.visualIdentity;
+  if (!identity || !Array.isArray(identity.anchors)) return '';
+  const preset = stylePreset(style);
+  const anchors = identity.anchors
+    .filter((a) => typeof a?.prompt === 'string' && a.prompt.trim())
+    .map((a) => `- ${a.type} / ${a.scale}: ${a.prompt.trim()}`)
+    .join('\n');
+  return [
+    'Create ONE identity-lock character portrait, not a model sheet and not a multi-character lineup.',
+    'Neutral full-body three-quarter standing view beside one large head-and-shoulders portrait of the same person on a pure white background.',
+    'The purpose is to lock a memorable, production-usable identity before generating the turnaround sheet.',
+    `Importance: ${character.importance ?? 'supporting'}.`,
+    `Use the identity, ethnicity, era, region, anatomy and costume facts from this source-grounded description; ignore its shot, background and lighting instructions: ${String(character?.image?.prompt ?? '').trim()}`,
+    'The following signature anchors are mandatory and must remain readable at their stated viewing scale:',
+    anchors,
+    preset.render,
+    preset.surface,
+    'Do not add fashionable accessories, fantasy ornament, unusual hair colour or decorative clutter unless explicitly required by an anchor.',
+    'The full-body figure and portrait must be the same person with identical facial geometry, hairstyle, body proportions and costume.',
+    'No text, labels, watermark, borders or extra people.',
+  ].filter(Boolean).join('\n');
+}
+
 /**
  * @param characters 角色卡数组
  * @param sourceText 原文；null 则跳过逐字引文校验
  * @param lang       报告语言，决定人类可读字段该是什么语言
  */
-export function validateCast(characters, sourceText, lang = DEFAULT_LANG, style = DEFAULT_STYLE) {
+export function validateCast(
+  characters,
+  sourceText,
+  lang = DEFAULT_LANG,
+  style = DEFAULT_STYLE,
+  { designMode = DESIGN_MODE, designPrinciple = '群像视觉身份按重要度分配签名锚点。' } = {},
+) {
   const problems = [];
   const flatSource = sourceText === null ? null : normalise(sourceText);
   const at = (name, msg) => problems.push(`[${name}] ${msg}`);
@@ -611,25 +667,152 @@ export function validateCast(characters, sourceText, lang = DEFAULT_LANG, style 
    * image.sheet 刻意不查：三分区排版规范是大段固定文本，真实角色之间本来就有 63%
    * 重合，设门必然误拦——误拦的门比没有门更糟。
    */
-  const promptSim = (a, b) => {
-    const words = (s) => new Set(String(s ?? '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length > 2));
-    const A = words(a); const B = words(b);
-    if (A.size < 8 || B.size < 8) return 0;
-    const inter = [...A].filter((w) => B.has(w)).length;
-    return inter / new Set([...A, ...B]).size;
-  };
   const SIM_MAX = 0.75;
   for (const [field, label] of [['prompt', '出图提示词'], ['voice', '音色提示词']]) {
     const get = (c) => (field === 'prompt' ? c?.image?.prompt : c?.voice?.prompt);
     for (let i = 0; i < characters.length; i += 1) {
       for (let j = i + 1; j < characters.length; j += 1) {
-        const sim = promptSim(get(characters[i]), get(characters[j]));
+        const sim = promptSimilarity(get(characters[i]), get(characters[j]));
         if (sim >= SIM_MAX) {
           const pct = Math.round(sim * 100);
           problems.push(
             `${characters[i]?.name ?? '(无名)'} 与 ${characters[j]?.name ?? '(无名)'} 的${label}雷同 ${pct}%`
             + `（上限 ${Math.round(SIM_MAX * 100)}%）——同一批角色要能区分开，别套同一个模板`,
           );
+        }
+      }
+    }
+  }
+
+  // --- 重要度驱动的视觉身份设计 ---
+  const identityRequired = true;
+  if (designMode !== DESIGN_MODE) {
+    problems.push(`顶层 designMode=${designMode ?? '(缺失)'} 不支持，应为 ${DESIGN_MODE}`);
+  }
+  if (typeof designPrinciple !== 'string' || !designPrinciple.trim()) {
+    problems.push('顶层缺少 designPrinciple（本剧群像视觉设计原则）');
+  }
+  if (identityRequired) {
+    const targetIndex = new Map();
+    for (const c of characters) {
+      for (const key of [c?.id, c?.name, ...(c?.aliases ?? [])]) {
+        if (typeof key === 'string' && key.trim()) targetIndex.set(key.trim().toLowerCase(), c);
+      }
+    }
+    const important = characters.filter((c) => ['protagonist', 'major'].includes(c?.importance));
+    const anchorText = [];
+    for (const c of characters) {
+      const name = c?.name ?? '(无名)';
+      const identity = c?.visualIdentity;
+      if (!identity || typeof identity !== 'object' || Array.isArray(identity)) {
+        at(name, '缺少 visualIdentity（群像视觉身份）');
+        continue;
+      }
+      if (typeof identity.designThesis !== 'string' || identity.designThesis.trim().length < 8) {
+        at(name, 'visualIdentity.designThesis 过短，必须说明角色设计命题');
+      } else {
+        if (lang === 'en' && CJK.test(identity.designThesis)) at(name, 'visualIdentity.designThesis 应为英文');
+        if (lang === 'zh' && !CJK.test(identity.designThesis)) at(name, 'visualIdentity.designThesis 应为中文');
+        if (lang === 'ja' && !KANA.test(identity.designThesis) && !CJK.test(identity.designThesis)) at(name, 'visualIdentity.designThesis 应为日文');
+      }
+      const anchors = identity.anchors;
+      if (!Array.isArray(anchors)) {
+        at(name, 'visualIdentity.anchors 必须是数组');
+        continue;
+      }
+      const budget = IDENTITY_BUDGETS[c?.importance];
+      if (budget && (anchors.length < budget.min || anchors.length > budget.max)) {
+        at(name, `visualIdentity.anchors 应为 ${budget.min}–${budget.max} 项（importance=${c.importance}），实际 ${anchors.length}`);
+      }
+      const types = new Set();
+      const scales = new Set();
+      const joined = [];
+      anchors.forEach((anchor, i) => {
+        if (!anchor || typeof anchor !== 'object' || Array.isArray(anchor)) {
+          at(name, `visualIdentity.anchors[${i}] 不是对象`);
+          return;
+        }
+        if (!IDENTITY_ANCHOR_TYPES.includes(anchor.type)) {
+          at(name, `visualIdentity.anchors[${i}].type「${anchor.type}」不合法`);
+        } else if (types.has(anchor.type)) {
+          at(name, `visualIdentity.anchors 的 type「${anchor.type}」重复——每个锚点占一个不同识别维度`);
+        } else {
+          types.add(anchor.type);
+        }
+        if (!IDENTITY_ANCHOR_SCALES.includes(anchor.scale)) {
+          at(name, `visualIdentity.anchors[${i}].scale「${anchor.scale}」不合法`);
+        } else {
+          scales.add(anchor.scale);
+        }
+        const prompt = typeof anchor.prompt === 'string' ? anchor.prompt.trim() : '';
+        if (prompt.length < 24) {
+          at(name, `visualIdentity.anchors[${i}].prompt 太短（至少 24 个英文字符）`);
+        } else {
+          if (CJK.test(prompt)) at(name, `visualIdentity.anchors[${i}].prompt 必须英文`);
+          const lower = prompt.toLowerCase();
+          if (!String(c?.image?.prompt ?? '').toLowerCase().includes(lower)) {
+            at(name, `签名锚点没有逐字进入 image.prompt：「${prompt.slice(0, 36)}…」`);
+          }
+          if (!String(c?.image?.sheet ?? '').toLowerCase().includes(lower)) {
+            at(name, `签名锚点没有逐字进入 image.sheet：「${prompt.slice(0, 36)}…」`);
+          }
+          for (const personName of [c?.name, ...(c?.aliases ?? [])].filter(Boolean)) {
+            if (prompt.includes(personName)) at(name, `签名锚点里出现人名「${personName}」`);
+          }
+          joined.push(prompt);
+        }
+      });
+      const requireTypes = (required) => {
+        for (const type of required) if (!types.has(type)) at(name, `importance=${c.importance} 的视觉身份必须包含 ${type} 锚点`);
+      };
+      if (c?.importance === 'protagonist') {
+        requireTypes(['silhouette', 'face', 'costume']);
+        if (!types.has('gesture') && !types.has('prop')) at(name, 'protagonist 还必须包含 gesture 或 prop 锚点');
+        for (const scale of IDENTITY_ANCHOR_SCALES) if (!scales.has(scale)) at(name, `protagonist 必须覆盖 ${scale} 识别距离`);
+      } else if (c?.importance === 'major') {
+        requireTypes(['silhouette', 'face']);
+        if (![...types].some((t) => ['costume', 'gesture', 'prop'].includes(t))) at(name, 'major 还必须包含 costume／gesture／prop 之一');
+        if (scales.size < 2) at(name, 'major 的签名锚点至少覆盖两个识别距离');
+      } else if (c?.importance === 'supporting') {
+        requireTypes(['silhouette']);
+        if (scales.size < 2) at(name, 'supporting 的签名锚点至少覆盖两个识别距离');
+      }
+      const contrasts = identity.contrastAgainst;
+      if (!Array.isArray(contrasts)) {
+        at(name, 'visualIdentity.contrastAgainst 必须是数组');
+      } else {
+        if (important.length > 1 && ['protagonist', 'major'].includes(c?.importance) && contrasts.length < 1) {
+          at(name, '主角／主要角色必须至少写一条 contrastAgainst，明确避开另一位重要角色');
+        }
+        for (const [i, contrast] of contrasts.entries()) {
+          const target = typeof contrast?.target === 'string' ? contrast.target.trim() : '';
+          const matched = targetIndex.get(target.toLowerCase());
+          if (!target || !matched) at(name, `visualIdentity.contrastAgainst[${i}].target「${target}」不存在`);
+          if (matched === c) at(name, `visualIdentity.contrastAgainst[${i}] 不能指向自己`);
+          if (!Array.isArray(contrast?.axes) || contrast.axes.length < 2) {
+            at(name, `visualIdentity.contrastAgainst[${i}].axes 至少两个视觉轴`);
+          } else {
+            for (const axis of contrast.axes) {
+              if (!IDENTITY_CONTRAST_AXES.includes(axis)) at(name, `contrast axis「${axis}」不合法`);
+            }
+          }
+          if (typeof contrast?.rule !== 'string' || contrast.rule.trim().length < 8) {
+            at(name, `visualIdentity.contrastAgainst[${i}].rule 过短`);
+          } else {
+            if (lang === 'en' && CJK.test(contrast.rule)) at(name, `visualIdentity.contrastAgainst[${i}].rule 应为英文`);
+            if (lang === 'zh' && !CJK.test(contrast.rule)) at(name, `visualIdentity.contrastAgainst[${i}].rule 应为中文`);
+            if (lang === 'ja' && !KANA.test(contrast.rule) && !CJK.test(contrast.rule)) at(name, `visualIdentity.contrastAgainst[${i}].rule 应为日文`);
+          }
+        }
+      }
+      anchorText.push({ name, text: joined.join(' ') });
+    }
+    const IDENTITY_SIM_MAX = 0.55;
+    for (let i = 0; i < anchorText.length; i += 1) {
+      for (let j = i + 1; j < anchorText.length; j += 1) {
+        const sim = promptSimilarity(anchorText[i].text, anchorText[j].text, 5);
+        if (sim >= IDENTITY_SIM_MAX) {
+          problems.push(`${anchorText[i].name} 与 ${anchorText[j].name} 的签名锚点雷同 ${Math.round(sim * 100)}%（上限 55%）——公共画风之外的角色身份仍然撞车`);
         }
       }
     }
@@ -786,6 +969,30 @@ export function validateCast(characters, sourceText, lang = DEFAULT_LANG, style 
 /* assemble                                                            */
 /* ------------------------------------------------------------------ */
 
+/** design-matrix.json 的视觉身份按 id／名字注入角色卡，矩阵是群像设计的唯一来源。 */
+export function applyDesignMatrix(cards, designMatrix) {
+  if (!designMatrix || typeof designMatrix !== 'object' || Array.isArray(designMatrix)) {
+    return cards.map((card) => ({ ...card }));
+  }
+  const rows = Array.isArray(designMatrix.characters) ? designMatrix.characters : [];
+  const index = new Map();
+  for (const row of rows) {
+    for (const key of [row?.id, row?.name]) {
+      if (typeof key === 'string' && key.trim()) index.set(key.trim().toLowerCase(), row);
+    }
+  }
+  return cards.map((card) => {
+    const row = [card?.id, card?.name]
+      .filter((x) => typeof x === 'string' && x.trim())
+      .map((x) => index.get(x.trim().toLowerCase()))
+      .find(Boolean);
+    if (row?.visualIdentity) return { ...card, visualIdentity: row.visualIdentity };
+    // 给了矩阵就以矩阵为唯一来源：没匹配到的卡不能偷偷保留 worker 自己发明的身份。
+    const { visualIdentity: _discarded, ...withoutIdentity } = card;
+    return withoutIdentity;
+  });
+}
+
 /**
  * 把第二趟的角色卡合成 cast.json 的顶层结构。纯机械活——之前留给模型
  * 手拼，手拼会丢字段、写错顶层键。
@@ -794,7 +1001,15 @@ export function validateCast(characters, sourceText, lang = DEFAULT_LANG, style 
  * 顺序）。不给 order 就保持传入顺序——CLI 按文件名读卡，那是 slug
  * 字典序不是戏份序，所以报告要「按戏份排序」就必须给 order。
  */
-export function assembleCast(cards, { source, lang = DEFAULT_LANG, style = DEFAULT_STYLE, summary = '', ui = null, order = null } = {}) {
+export function assembleCast(cards, {
+  source,
+  lang = DEFAULT_LANG,
+  style = DEFAULT_STYLE,
+  summary = '',
+  ui = null,
+  order = null,
+  designMatrix = null,
+} = {}) {
   const rank = (c) => {
     const i = IMPORTANCE.indexOf(c?.importance);
     return i < 0 ? IMPORTANCE.length : i; // 越界的排最后，让 validate 去报，这里不崩
@@ -802,11 +1017,15 @@ export function assembleCast(cards, { source, lang = DEFAULT_LANG, style = DEFAU
   const orderIndex = new Map((order ?? []).map((name, i) => [String(name).trim().toLowerCase(), i]));
   // 不在 order 里的排到同档末尾（保持传入顺序），不报错——卡是从 merge 结果生成的，正常对得上
   const byOrder = (c) => orderIndex.get(String(c?.name ?? '').trim().toLowerCase()) ?? orderIndex.size;
-  const characters = cards
+  const characters = applyDesignMatrix(cards, designMatrix)
     .map((card, i) => [card, i])
     .sort((a, b) => rank(a[0]) - rank(b[0]) || byOrder(a[0]) - byOrder(b[0]) || a[1] - b[1])
     .map(([card]) => card);
   const cast = { source, lang, style };
+  if (designMatrix) {
+    cast.designMode = designMatrix.mode ?? DESIGN_MODE;
+    cast.designPrinciple = designMatrix.principle ?? '';
+  }
   if (ui) cast.ui = ui;
   cast.summary = summary;
   cast.characters = characters;
@@ -817,10 +1036,11 @@ export function assembleCast(cards, { source, lang = DEFAULT_LANG, style = DEFAU
 /* render — markdown                                                   */
 /* ------------------------------------------------------------------ */
 
-export function renderMarkdown(characters, source, summary = '', lang = DEFAULT_LANG, ui = null) {
+export function renderMarkdown(characters, source, summary = '', lang = DEFAULT_LANG, ui = null, designPrinciple = '') {
   const t = strings(lang, ui);
   const out = [t.mdTitle(source), '', t.mdCast(characters.length, characters.map((c) => c.name).join('、')), ''];
   if (summary) out.push(t.mdSynopsis, '', summary, '');
+  if (designPrinciple) out.push(`**${t.image.identity}**`, '', designPrinciple, '');
 
   for (const c of characters) {
     const { persona, image, voice } = c;
@@ -853,6 +1073,19 @@ export function renderMarkdown(characters, source, summary = '', lang = DEFAULT_
 
     out.push(`### ${t.groups.image}`, '');
     out.push(`**${t.image.style}**　${image.style}`, '');
+    if (c.visualIdentity) {
+      out.push(`**${t.image.designThesis}**　${c.visualIdentity.designThesis ?? ''}`, '');
+      if (c.visualIdentity.anchors?.length) {
+        out.push(`**${t.image.anchors}**`, '');
+        for (const a of c.visualIdentity.anchors) out.push(`- \`${a.type}/${a.scale}\` ${a.prompt}`);
+        out.push('');
+      }
+      if (c.visualIdentity.contrastAgainst?.length) {
+        out.push(`**${t.image.contrast}**`, '');
+        for (const x of c.visualIdentity.contrastAgainst) out.push(`- ${x.target} · ${(x.axes ?? []).join(' / ')} — ${x.rule}`);
+        out.push('');
+      }
+    }
     if (image.tags.length) out.push(`\`${image.tags.join('`, `')}\``, '');
     out.push(`**${t.image.prompt}**`, '', '```text', image.prompt, '```', '');
     if (image.promptLocal) out.push(`${image.promptLocal}`, '');
@@ -957,6 +1190,15 @@ function renderCharacter(c, index, t) {
          <span>${esc(c.name)} · ${esc(t.noImage)}<br><em>${esc(t.noImageHint)}</em></span>
        </div>`;
 
+  const identity = c.visualIdentity;
+  const identityBlock = identity
+    ? `<section class="blk identity"><h3>${esc(t.image.identity)}</h3>
+         <p><b>${esc(t.image.designThesis)}</b>　${marked(identity.designThesis ?? '')}</p>
+         ${(identity.anchors ?? []).length ? `<h4>${esc(t.image.anchors)}</h4><ul>${identity.anchors.map((a) => `<li><code>${esc(`${a.type}/${a.scale}`)}</code>${esc(a.prompt)}</li>`).join('')}</ul>` : ''}
+         ${(identity.contrastAgainst ?? []).length ? `<h4>${esc(t.image.contrast)}</h4><ul>${identity.contrastAgainst.map((x) => `<li><b>${esc(x.target)}</b><code>${esc((x.axes ?? []).join(' / '))}</code>${marked(x.rule ?? '')}</li>`).join('')}</ul>` : ''}
+       </section>`
+    : '';
+
   return `<article class="char${index === 0 ? ' on' : ''}" id="p-${slug(c.name)}">
   <header class="char-h">
     <span class="char-n">${String(index + 1).padStart(2, '0')}</span>
@@ -976,6 +1218,8 @@ function renderCharacter(c, index, t) {
         ${block(t.persona.motivation, persona.motivation)}
         ${block(t.persona.arc, persona.arc)}
       </div>
+
+      ${identityBlock}
 
       ${
         persona.evidence.length
@@ -1184,8 +1428,13 @@ function renderGraph(ordered, t) {
  * `<` 转成 <：JSON 里 `<` 只可能出现在字符串值中，整体替换是安全的，
  * 而不转的话正文里一个 `</script` 就能把这个数据块提前截断。
  */
-function embedCast(characters, source, summary, lang, ui, style) {
-  const data = { source, lang, style, summary, ...(ui ? { ui } : {}), characters };
+function embedCast(characters, source, summary, lang, ui, style, designMode, designPrinciple) {
+  const data = {
+    source, lang, style, summary,
+    ...(designMode ? { designMode, designPrinciple } : {}),
+    ...(ui ? { ui } : {}),
+    characters,
+  };
   return JSON.stringify(data).replace(/</g, '\\u003c');
 }
 
@@ -1196,6 +1445,8 @@ export function renderHtml(
   lang = DEFAULT_LANG,
   ui = null,
   style = DEFAULT_STYLE,
+  designMode = null,
+  designPrinciple = '',
 ) {
   const t = strings(lang, ui);
   const shots = characters.filter((c) => c.sheetImage).length;
@@ -1341,6 +1592,11 @@ button{font-family:inherit}
 .blk{margin-bottom:20px}
 .blk h3{font:500 11px/1 var(--sans);letter-spacing:.2em;color:var(--seal);margin-bottom:7px}
 .blk p{margin:0;font-size:13.5px;line-height:1.85}
+.identity{padding:14px 16px;border:1px solid var(--rule);background:var(--side)}
+.identity h4{margin:12px 0 6px;font:500 10px/1 var(--sans);letter-spacing:.16em;color:var(--ink-2)}
+.identity ul{margin:0;padding:0;list-style:none;display:grid;gap:6px}
+.identity li{font:400 11.5px/1.6 var(--mono);color:var(--ink-2)}
+.identity code{display:inline-block;margin-right:8px;padding:1px 5px;border:1px solid var(--rule-2);color:var(--seal);background:var(--panel)}
 
 /* 原文：衬线体，铁锈红边栏。这里是书自己在说话 */
 .source .quotes{display:grid;grid-template-columns:1fr 1fr;gap:10px 30px}
@@ -1488,6 +1744,7 @@ button{font-family:inherit}
 <div class="shell">
   <aside class="side">
     ${summary ? `<section class="synopsis syn-clamp"><div class="lbl">${esc(t.synopsis)}</div><p>${marked(summary)}</p><button class="syn-more">${esc(t.expandAll)}</button></section>` : ''}
+    ${designPrinciple ? `<section class="synopsis"><div class="lbl">${esc(t.image.identity)}</div><p>${marked(designPrinciple)}</p></section>` : ''}
     <button class="gtoggle" aria-controls="graph">
       <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="3.2" cy="4" r="1.9"/><circle cx="12.8" cy="6.2" r="1.9"/><circle cx="7.2" cy="13" r="1.9"/><path d="M5 4.6l6 1.2M4 5.9l2.5 5.4M11.7 7.9l-3.3 3.7"/></svg>
       <span>${esc(t.graphTitle)}</span>
@@ -1511,7 +1768,7 @@ button{font-family:inherit}
   <img alt="">
 </div>
 
-<script type="application/json" id="cast-data">${embedCast(characters, source, summary, lang, ui, style)}</script>
+<script type="application/json" id="cast-data">${embedCast(characters, source, summary, lang, ui, style, designMode, designPrinciple)}</script>
 
 <script>
 const L = ${JSON.stringify({ copied: t.copied, failed: t.copyFailed })};
@@ -1727,7 +1984,9 @@ const USAGE = `novel-characters.mjs — novel-characters skill 的确定性工�
   assemble <workdir> --source <书名>
         [--lang] [--style] [--out] 把 card-*.json + summary.txt（+ ui.json）合成 cast.json
         [--order merged.json]      同档角色的戏份顺序（默认自动找 <workdir>/merged.json）
+        [--design design-matrix.json] 群像视觉矩阵（默认自动找 <workdir>/design-matrix.json）
   validate <cast.json> <book.txt>  校验；有违规逐条打印并 exit 1
+  identity-prompt <cast.json> <角色名或 id>  打印重要角色身份锁定图提示词
   render <cast.json> [--html|--md] 渲染报告到 stdout（默认 --md）
   slug <name>                      角色名转安全文件名
   ui-template [lang]               打印界面文案骨架，供翻译成内置表没有的语言
@@ -1764,6 +2023,8 @@ function loadCast(path) {
     lang: Array.isArray(raw) ? DEFAULT_LANG : (raw.lang ?? DEFAULT_LANG),
     ui: Array.isArray(raw) ? null : (raw.ui ?? null),
     style: Array.isArray(raw) ? DEFAULT_STYLE : (raw.style ?? DEFAULT_STYLE),
+    designMode: Array.isArray(raw) ? null : (raw.designMode ?? null),
+    designPrinciple: Array.isArray(raw) ? '' : (raw.designPrinciple ?? ''),
   };
 }
 
@@ -1834,6 +2095,9 @@ function main(argv) {
     if (!sourceName) throw new Error('assemble 需要 --source <书名>');
     const lang = flag(rest, '--lang', DEFAULT_LANG);
     const style = flag(rest, '--style', DEFAULT_STYLE);
+    const designPath = flag(rest, '--design', existsSync(join(dir, 'design-matrix.json')) ? join(dir, 'design-matrix.json') : null);
+    const designMatrix = designPath ? readJson(designPath) : null;
+    if (!designMatrix) throw new Error(`缺 ${join(dir, 'design-matrix.json')}——新流程必须先完成群像视觉矩阵`);
 
     const files = readdirSync(dir).filter((f) => /^card-.*\.json$/.test(f)).sort();
     if (!files.length) throw new Error(`${dir} 里没有 card-*.json`);
@@ -1890,7 +2154,7 @@ function main(argv) {
       process.exit(1);
     }
 
-    const cast = assembleCast(cards, { source: sourceName, lang, style, summary, ui, order });
+    const cast = assembleCast(cards, { source: sourceName, lang, style, summary, ui, order, designMatrix });
     const json = JSON.stringify(cast, null, 2) + '\n';
     const out = flag(rest, '--out');
     if (out) {
@@ -1905,12 +2169,14 @@ function main(argv) {
   if (cmd === 'validate') {
     const [castPath, bookPath] = rest;
     if (!castPath) throw new Error('用法：validate <cast.json> <book.txt>');
-    const { characters, summary, lang: castLang, ui, style: castStyle } = loadCast(castPath);
+    const {
+      characters, summary, lang: castLang, ui, style: castStyle, designMode, designPrinciple,
+    } = loadCast(castPath);
     const lang = flag(rest, '--lang', castLang);
     const style = flag(rest, '--style', castStyle);
     const source = bookPath ? readFileSync(resolve(bookPath), 'utf8') : null;
     if (!bookPath) console.error('⚠️ 没给原文，跳过逐字引文校验');
-    const problems = validateCast(characters, source, lang, style);
+    const problems = validateCast(characters, source, lang, style, { designMode, designPrinciple });
     if (!SUPPORTED_STYLES.includes(style)) {
       problems.unshift(`顶层 style=${style} 不是已知预设（${SUPPORTED_STYLES.join('/')}）`);
     }
@@ -1935,6 +2201,23 @@ function main(argv) {
     return;
   }
 
+  if (cmd === 'identity-prompt') {
+    const [castPath, target] = rest;
+    if (!castPath || !target) throw new Error('用法：identity-prompt <cast.json> <角色名或 id>');
+    const cast = loadCast(castPath);
+    const key = String(target).trim().toLowerCase();
+    const character = cast.characters.find((c) => [c?.id, c?.name, ...(c?.aliases ?? [])]
+      .some((x) => typeof x === 'string' && x.trim().toLowerCase() === key));
+    if (!character) throw new Error(`找不到角色「${target}」`);
+    if (!['protagonist', 'major'].includes(character.importance)) {
+      console.error(`⚠️ ${character.name} importance=${character.importance}，通常直接出 sheet；仍按要求打印身份提示词`);
+    }
+    const prompt = buildIdentityPrompt(character, cast.style);
+    if (!prompt) throw new Error(`${character.name} 缺 visualIdentity，无法生成身份锁定图提示词`);
+    process.stdout.write(prompt + '\n');
+    return;
+  }
+
   if (cmd === 'render') {
     const [castPath] = rest;
     if (!castPath) throw new Error('用法：render <cast.json> [--html|--md]');
@@ -1942,7 +2225,9 @@ function main(argv) {
     const imagesDir = flag(rest, '--images', 'images');
     const sourceFlag = flag(rest, '--source');
 
-    const { characters, source, summary, lang: castLang, ui, style } = loadCast(castPath);
+    const {
+      characters, source, summary, lang: castLang, ui, style, designMode, designPrinciple,
+    } = loadCast(castPath);
     const lang = flag(rest, '--lang', castLang);
     const title = sourceFlag ?? source ?? basename(castPath).replace(/\.[^.]+$/, '');
 
@@ -1955,8 +2240,8 @@ function main(argv) {
 
     process.stdout.write(
       (html
-        ? renderHtml(characters, title, summary, lang, ui, style)
-        : renderMarkdown(characters, title, summary, lang, ui)) + '\n',
+        ? renderHtml(characters, title, summary, lang, ui, style, designMode, designPrinciple)
+        : renderMarkdown(characters, title, summary, lang, ui, designPrinciple)) + '\n',
     );
     return;
   }
