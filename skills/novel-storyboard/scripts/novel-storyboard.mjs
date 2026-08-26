@@ -93,6 +93,22 @@ export const FRAME_ENTRY_TOKENS = {
   en: 'motion begins only after the 0.00-second entry frame',
   zh: '动作仅在 0.00 秒入口帧之后开始',
 };
+/** 单次粗略九宫格 → 人工顺序选择 → 高清终稿与边运镜。 */
+export const CANDIDATE_MODE = 'single-grid-rough';
+export const SELECTION_MODE = 'human-ordered';
+export const EDGE_PLAN_MODE = 'edge-driven';
+export const CANDIDATE_GRID_SPEC = [
+  { id: 'G1', moment: 'entry', size: 'wide' },
+  { id: 'G2', moment: 'entry', size: 'medium' },
+  { id: 'G3', moment: 'entry', size: 'close' },
+  { id: 'G4', moment: 'transition', size: 'wide' },
+  { id: 'G5', moment: 'transition', size: 'medium' },
+  { id: 'G6', moment: 'transition', size: 'close' },
+  { id: 'G7', moment: 'result', size: 'wide' },
+  { id: 'G8', moment: 'result', size: 'medium' },
+  { id: 'G9', moment: 'result', size: 'close' },
+];
+export const EDGE_PLAN_FIELDS = ['target', 'focus', 'intent'];
 /** 镜头连续性：状态链 + 切内动作桥 + 段间交接；新 seed 默认开启。 */
 export const CONTINUITY_MODE = 'state-linked';
 export const CONTINUITY_STATE_FIELDS = [
@@ -187,6 +203,54 @@ export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = f
   if (exclude.length) lines.push(`Do not add: ${exclude.join('; ')}.`);
   lines.push('No text, no watermark, no borders — a single clean full-bleed 16:9 frame.');
   return lines.join('\n');
+}
+
+/** 一次 imagegen 调用使用的粗略九宫格提示词；编号由报告叠加，不让图像模型画字。 */
+export function buildCandidateGridPrompt(seg) {
+  const cells = Array.isArray(seg?.candidateBoard?.cells) ? seg.candidateBoard.cells : [];
+  const lines = [
+    'Create ONE rough 3-by-3 storyboard contact sheet on a single 16:9 canvas.',
+    'Exactly nine equal 16:9 panels arranged in three columns and three rows with narrow clean gutters.',
+    'This is a low-detail composition board for human selection: prioritize readable staging, shot size, screen direction, prop ownership and action phase over facial or material detail.',
+    'Use the attached environment, character and prop references as rough identity and continuity standards; do not spend detail budget on polish.',
+    'Keep the same characters, costume blocks, location geometry, lighting direction and narrative props consistent across all nine panels.',
+    'Row 1 is the pre-action entry state; row 2 is action development; row 3 is the visible result or exit state.',
+  ];
+  for (const spec of CANDIDATE_GRID_SPEC) {
+    const cell = cells.find((x) => x?.id === spec.id);
+    lines.push(`[Cell ${spec.id} — ${spec.moment} / ${spec.size}] ${String(cell?.prompt ?? '').trim()}`);
+  }
+  lines.push('Do not draw cell numbers, captions, text, watermark or decorative borders inside the image; the review report overlays G1–G9 labels deterministically.');
+  if (seg?.id) lines.push(`Copy the final selected image to ./${seg.id}/candidate-grid.png.`);
+  return lines.join('\n');
+}
+
+export function candidateSelectionBounds(seg, params = DEFAULT_PARAMS) {
+  const seconds = segSeconds(seg);
+  return {
+    min: Math.max(2, Math.ceil(seconds / params.maxCutSeconds) + 1),
+    max: Math.min(5, Math.floor(seconds / params.minCutSeconds) + 1),
+  };
+}
+
+/** 报告导出的 selection.json 写回 storyboard；后续模型按 selected 顺序重排 cuts/edgePlans。 */
+export function applyCandidateSelection(board, selectionDoc) {
+  if (selectionDoc?.mode !== SELECTION_MODE) throw new Error(`selection.mode 必须是「${SELECTION_MODE}」`);
+  const next = JSON.parse(JSON.stringify(board));
+  const selections = Array.isArray(selectionDoc?.selections) ? selectionDoc.selections : [];
+  const bySegment = new Map(selections.map((x) => [x?.segment, x]));
+  const known = new Set((next?.episodes ?? []).flatMap((ep) => (ep?.segments ?? []).map((seg) => seg?.id)));
+  for (const id of bySegment.keys()) if (!known.has(id)) throw new Error(`selection 引用了不存在的段「${id}」`);
+  for (const ep of next?.episodes ?? []) {
+    for (const seg of ep?.segments ?? []) {
+      const picked = bySegment.get(seg?.id);
+      if (!picked) continue;
+      if (!seg.candidateBoard || typeof seg.candidateBoard !== 'object') seg.candidateBoard = { mode: CANDIDATE_MODE, cells: [] };
+      seg.candidateBoard.selected = Array.isArray(picked.selected) ? [...picked.selected] : [];
+      seg.candidateBoard.needsReplan = true;
+    }
+  }
+  return next;
 }
 
 /** 分镜图风格预设：与 novel-characters / novel-art 同名对齐（realistic / cinematic / ghibli / inkwash）。
@@ -625,7 +689,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], framePlan: [], frameEntry: [], continuity: [], scriptState: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], framePlan: [], frameEntry: [], candidate: [], continuity: [], scriptState: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -651,6 +715,10 @@ export function gateReport(board, ctx = {}) {
   if (board?.frameEntryMode && !frameEntryRequired) {
     bad.frameEntry.push(`frameEntryMode「${board.frameEntryMode}」不支持，应为「${FRAME_ENTRY_MODE}」`);
   }
+  const candidateRequired = board?.candidateMode === CANDIDATE_MODE;
+  if (board?.candidateMode && !candidateRequired) bad.candidate.push(`candidateMode「${board.candidateMode}」不支持，应为「${CANDIDATE_MODE}」`);
+  if (candidateRequired && board?.selectionMode !== SELECTION_MODE) bad.candidate.push(`selectionMode 必须是「${SELECTION_MODE}」`);
+  if (candidateRequired && board?.edgePlanMode !== EDGE_PLAN_MODE) bad.candidate.push(`edgePlanMode 必须是「${EDGE_PLAN_MODE}」`);
   const detailMinChars = promptLang === 'en' ? 24 : 10;
   const checkPromptFields = (obj, fields, owner, text) => {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
@@ -732,6 +800,76 @@ export function gateReport(board, ctx = {}) {
       const sid = seg?.id ?? '?';
       const cuts = seg?.cuts ?? [];
       const total = segSeconds(seg);
+
+      if (candidateRequired) {
+        const boardPlan = seg?.candidateBoard;
+        if (!boardPlan || typeof boardPlan !== 'object' || Array.isArray(boardPlan)) {
+          bad.candidate.push(`${sid} 缺 candidateBoard`);
+        } else {
+          if (boardPlan.mode !== CANDIDATE_MODE) bad.candidate.push(`${sid}.candidateBoard.mode 必须是「${CANDIDATE_MODE}」`);
+          const cells = Array.isArray(boardPlan.cells) ? boardPlan.cells : [];
+          if (cells.length !== 9) bad.candidate.push(`${sid}.candidateBoard.cells 必须恰好 9 格，实际 ${cells.length}`);
+          for (const spec of CANDIDATE_GRID_SPEC) {
+            const cell = cells.find((x) => x?.id === spec.id);
+            if (!cell) {
+              bad.candidate.push(`${sid} 缺候选格 ${spec.id}`);
+              continue;
+            }
+            if (cell.moment !== spec.moment || cell.size !== spec.size) {
+              bad.candidate.push(`${sid}.${spec.id} 必须是 ${spec.moment}/${spec.size}`);
+            }
+            const prompt = typeof cell.prompt === 'string' ? cell.prompt.trim() : '';
+            if (prompt.length < 24) bad.candidate.push(`${sid}.${spec.id}.prompt 太短（至少 24 个英文字符）`);
+            if (CJK.test(prompt)) bad.candidate.push(`${sid}.${spec.id}.prompt 必须英文`);
+            for (const name of banned) if (prompt.includes(name)) bad.candidate.push(`${sid}.${spec.id}.prompt 出现角色名「${name}」`);
+          }
+          const selected = Array.isArray(boardPlan.selected) ? boardPlan.selected : [];
+          const bounds = candidateSelectionBounds(seg, params);
+          if (selected.length < bounds.min || selected.length > bounds.max) {
+            bad.candidate.push(`${sid}.candidateBoard.selected 应选 ${bounds.min}–${bounds.max} 格（段长 ${total}s），实际 ${selected.length}`);
+          }
+          if (new Set(selected).size !== selected.length) bad.candidate.push(`${sid}.candidateBoard.selected 不能重复选择同一格`);
+          const specById = new Map(CANDIDATE_GRID_SPEC.map((x, i) => [x.id, { ...x, index: i }]));
+          const chosenSpecs = selected.map((id) => specById.get(id));
+          for (const id of selected) if (!specById.has(id)) bad.candidate.push(`${sid}.candidateBoard.selected 含未知格「${id}」`);
+          if (chosenSpecs[0] && chosenSpecs[0].moment !== 'entry') bad.candidate.push(`${sid} 第一张必须从 G1–G3 entry 行选择`);
+          if (chosenSpecs.length && chosenSpecs[chosenSpecs.length - 1]?.moment !== 'result') bad.candidate.push(`${sid} 最后一张必须从 G7–G9 result 行选择`);
+          for (const spec of chosenSpecs.slice(1, -1)) {
+            if (spec && spec.moment !== 'transition') bad.candidate.push(`${sid} 中间选择只能来自 G4–G6 transition 行`);
+          }
+          for (let i = 1; i < chosenSpecs.length; i++) {
+            if (chosenSpecs[i - 1] && chosenSpecs[i] && chosenSpecs[i].index < chosenSpecs[i - 1].index) {
+              bad.candidate.push(`${sid}.candidateBoard.selected 顺序必须从入口行向结果行推进`);
+              break;
+            }
+          }
+          if (boardPlan.needsReplan) bad.candidate.push(`${sid} 已更新人工选择但尚未按 selected 重排 cuts/edgePlans`);
+          if (selected.length && cuts.length !== selected.length) bad.candidate.push(`${sid} 选了 ${selected.length} 格，但最终 cuts 是 ${cuts.length} 个`);
+          cuts.forEach((cut, i) => {
+            if (selected[i] && cut?.candidateId !== selected[i]) bad.candidate.push(`${sid}#${i + 1}.candidateId 应为「${selected[i]}」`);
+            const cell = cells.find((x) => x?.id === cut?.candidateId);
+            if (cell?.prompt && !String(cut?.frame ?? '').toLowerCase().includes(String(cell.prompt).toLowerCase())) {
+              bad.candidate.push(`${sid}#${i + 1} 的 frame 没有保留所选 ${cut.candidateId} 候选描述`);
+            }
+          });
+          const edges = Array.isArray(seg?.edgePlans) ? seg.edgePlans : [];
+          if (selected.length && edges.length !== Math.max(0, selected.length - 1)) {
+            bad.candidate.push(`${sid}.edgePlans 应为 ${Math.max(0, selected.length - 1)} 条，实际 ${edges.length}`);
+          }
+          edges.forEach((edge, i) => {
+            const wantFrom = selected[i]; const wantTo = selected[i + 1];
+            if (edge?.from !== wantFrom || edge?.to !== wantTo) bad.candidate.push(`${sid}.edgePlans[${i}] 应连接 ${wantFrom} → ${wantTo}`);
+            if (!CAMERA_MOVES[edge?.camera]) bad.candidate.push(`${sid}.edgePlans[${i}].camera「${edge?.camera}」不合法`);
+            if (!TRANSITION_TOKENS[edge?.transition]) bad.candidate.push(`${sid}.edgePlans[${i}].transition「${edge?.transition}」不合法`);
+            if (!CAMERA_PLAN_PACES.includes(edge?.pace)) bad.candidate.push(`${sid}.edgePlans[${i}].pace「${edge?.pace}」不合法`);
+            if (!CAMERA_PLAN_MAGNITUDES.includes(edge?.magnitude)) bad.candidate.push(`${sid}.edgePlans[${i}].magnitude「${edge?.magnitude}」不合法`);
+            for (const field of EDGE_PLAN_FIELDS) if (!hasText(edge?.[field])) bad.candidate.push(`${sid}.edgePlans[${i}].${field} 为空`);
+            const toCut = cuts[i + 1];
+            if (toCut && edge?.camera !== toCut.camera) bad.candidate.push(`${sid}.edgePlans[${i}].camera 必须等于目标 cut 的 camera`);
+            if (toCut && edge?.transition !== toCut.transition) bad.candidate.push(`${sid}.edgePlans[${i}].transition 必须等于目标 cut 的 transition`);
+          });
+        }
+      }
 
       if (!(total > 0) || total > params.maxSegmentSeconds || (params.minSegmentSeconds > 0 && total < params.minSegmentSeconds)) {
         bad.segCap.push(`${sid} 共 ${total} 秒`);
@@ -1283,6 +1421,12 @@ export function gateReport(board, ctx = {}) {
     bad.frameEntry.length === 0,
     bad.frameEntry.length ? bad.frameEntry.join('；') : frameEntryRequired ? '' : `未启用 frameEntryMode=${FRAME_ENTRY_MODE}，入口帧检查跳过`,
   );
+  add(
+    'candidate-grid-selection',
+    '每段单次粗九宫格恰好 9 格；人工选择从 entry 到 result，cuts 与 edgePlans 完整对账',
+    bad.candidate.length === 0,
+    bad.candidate.length ? bad.candidate.join('；') : candidateRequired ? '' : `未启用 candidateMode=${CANDIDATE_MODE}，九宫格候选检查跳过`,
+  );
   add('style-phrase', `分镜图风格短语统一（${style ? `${styleId}：${style.phrase}` : '预设无效'}）——同剧不许画风漂`, bad.style.length === 0, bad.style.join('；'));
   add('prompt-english', '完整分镜图提示词全英文且基础 frame 非空', bad.english.length === 0, bad.english.join('；'));
   add('prompt-no-names', '英文提示词不含角色名（分镜图提示词恒查；中文 H3 提示词放行）', bad.names.length === 0, banned.length ? bad.names.join('；') : SKIP_NAMES);
@@ -1397,6 +1541,9 @@ export function seedFromScript(script, epRange = null) {
     promptDetailMode: PROMPT_DETAIL_MODE,
     framePlanMode: FRAME_PLAN_MODE,
     frameEntryMode: FRAME_ENTRY_MODE,
+    candidateMode: CANDIDATE_MODE,
+    selectionMode: SELECTION_MODE,
+    edgePlanMode: EDGE_PLAN_MODE,
     continuityMode: CONTINUITY_MODE,
     episodes,
   };
@@ -1427,6 +1574,24 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
       const promptMd = `# ${seg.id} · H3 提示词\n\n首帧 = **f1.png**。图片按 Picture 序号挂载：\n\n${mapping}\n\n---\n\n${seg.h3Prompt ?? ''}\n`;
       files.push({ path: `${prefix}${seg.id}/prompt.md`, content: promptMd });
       const pictures = (seg.cuts ?? []).map((_, i) => `${prefix}${seg.id}/f${i + 1}.png`);
+      let candidateGrid = null;
+      if (seg?.candidateBoard) {
+        const candidatePromptPath = `${prefix}${seg.id}/candidate-grid.prompt.md`;
+        const candidateImagePath = `${prefix}${seg.id}/candidate-grid.png`;
+        const selectionPath = `${prefix}${seg.id}/candidate-selection.template.json`;
+        files.push({ path: candidatePromptPath, content: `# ${seg.id} · 粗略九宫格提示词\n\n${buildCandidateGridPrompt(seg)}\n` });
+        files.push({
+          path: selectionPath,
+          content: JSON.stringify({ mode: SELECTION_MODE, selections: [{ segment: seg.id, selected: seg.candidateBoard.selected ?? [] }] }, null, 2) + '\n',
+        });
+        candidateGrid = {
+          prompt: candidatePromptPath,
+          image: candidateImagePath,
+          selection: selectionPath,
+          selected: seg.candidateBoard.selected ?? [],
+          missing: !imageExists(candidateImagePath),
+        };
+      }
       const imagePrompts = (seg.cuts ?? []).map((cut, i) => {
         const path = `${prefix}${seg.id}/f${i + 1}.prompt.md`;
         const prompt = buildFrameImagePrompt(cut, {
@@ -1449,6 +1614,8 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
         prompt: `${prefix}${seg.id}/prompt.md`,
         pictures,
         imagePrompts,
+        ...(candidateGrid ? { candidateGrid } : {}),
+        edgePlans: seg?.edgePlans ?? [],
         missing,
       });
     }
@@ -1499,6 +1666,7 @@ const GATE_LABELS_EN = {
   'prompt-detail': 'Production-rich prompt: visual layers per cut, layered soundscape and scored music arc per segment',
   'frame-density': 'Frame prompts use role-driven sparse / balanced / rich density and compile into the final image prompt',
   'frame-entry-state': 'Every segment f1 is a pre-action entry state; motion starts only after the 0.00-second frame',
+  'candidate-grid-selection': 'Each segment has one rough nine-cell grid; human selection runs entry to result and audits cuts plus edge plans',
   'style-phrase': 'Frame-prompt style phrase consistent — one drama, one look',
   'prompt-english': 'Compiled frame prompts are English and the base frame is non-empty',
   'prompt-no-names': 'Compiled English frame prompts carry no character names',
@@ -1518,6 +1686,7 @@ const GATE_SKIPS_EN = {
     [`未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`]: `promptDetailMode=${PROMPT_DETAIL_MODE} not enabled — richness checks skipped`,
     [`未启用 framePlanMode=${FRAME_PLAN_MODE}，分镜图密度检查跳过`]: `framePlanMode=${FRAME_PLAN_MODE} not enabled — frame-density checks skipped`,
     [`未启用 frameEntryMode=${FRAME_ENTRY_MODE}，入口帧检查跳过`]: `frameEntryMode=${FRAME_ENTRY_MODE} not enabled — entry-frame checks skipped`,
+    [`未启用 candidateMode=${CANDIDATE_MODE}，九宫格候选检查跳过`]: `candidateMode=${CANDIDATE_MODE} not enabled — candidate-grid checks skipped`,
     [`未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`]: `continuityMode=${CONTINUITY_MODE} not enabled — continuity checks skipped`,
     [`剧本未启用 continuityMode=${CONTINUITY_MODE}，跨层剧情状态检查跳过`]: `script continuityMode=${CONTINUITY_MODE} not enabled — cross-layer script-state checks skipped`,
 };
@@ -1567,6 +1736,11 @@ const I18N = {
     frameMissing: (i) => `#${i} 未生成`,
     framePrompt: '完整分镜图提示词',
     framePlan: '画面密度',
+    candidateTitle: '粗略九宫格候选',
+    candidateHint: '按想要的播放顺序点击格子；第一个是开始，最后一个是结尾，再点一次取消',
+    candidateMissing: '九宫格尚未生成',
+    exportSelection: '导出选择',
+    clearSelection: '清空本段',
     h3Prompt: 'H3 提示词',
     h3Section: 'H3 视频提示词',
     showSegs: '▾ 展开全部段',
@@ -1632,6 +1806,11 @@ const I18N = {
     frameMissing: (i) => `#${i} not generated`,
     framePrompt: 'Full frame prompt',
     framePlan: 'Frame density',
+    candidateTitle: 'Rough nine-cell candidates',
+    candidateHint: 'Click cells in playback order; first becomes start and last becomes end. Click again to remove.',
+    candidateMissing: 'Candidate grid not generated',
+    exportSelection: 'Export selection',
+    clearSelection: 'Clear segment',
     h3Prompt: 'H3 prompt',
     h3Section: 'H3 video prompt',
     showSegs: '▾ Show all segments',
@@ -1841,6 +2020,18 @@ export function renderHtml(board, ctx = {}) {
           const starts = cutStarts(seg.cuts);
           const frame = (ci) => `${seg.id}/f${ci + 1}.png`;
           const has = (ci) => (ctx.imageExists ? ctx.imageExists(frame(ci)) : false);
+          const candidatePath = `${seg.id}/candidate-grid.png`;
+          const hasCandidate = Boolean(seg?.candidateBoard && ctx.imageExists && ctx.imageExists(candidatePath));
+          const candidatePrompt = seg?.candidateBoard ? buildCandidateGridPrompt(seg) : '';
+          const candidatePanel = seg?.candidateBoard
+            ? `<section class="cand" data-segment="${esc(seg.id)}" data-initial="${esc((seg.candidateBoard.selected ?? []).join(','))}">
+  <header class="cand-h"><div><b>${esc(t.candidateTitle)}</b><small>${esc(t.candidateHint)}</small></div><button class="cand-clear">${esc(t.clearSelection)}</button></header>
+  <div class="cand-media">
+    ${hasCandidate ? `<img src="${esc(candidatePath)}" alt="${esc(`${seg.id} ${t.candidateTitle}`)}" loading="lazy">` : `<div class="cand-ph"><b>${esc(t.candidateMissing)}</b><button class="copy mini" data-copy="${esc(candidatePrompt)}">${esc(t.copy)}</button><pre>${esc(candidatePrompt)}</pre></div>`}
+    ${hasCandidate ? `<div class="cand-cells">${CANDIDATE_GRID_SPEC.map((cell) => `<button type="button" data-cell="${cell.id}" title="${esc(`${cell.id} · ${cell.moment} / ${cell.size}`)}"><span>${cell.id}</span><em></em></button>`).join('')}</div>` : ''}
+  </div>
+</section>`
+            : '';
 
           // 主分镜图区：图出全的段保留原 master+subs 层级；有缺图的段每切一格——
           // 有图的格显示原图，无图的格显示整宽提示词卡 + 复制按钮（混合情况按格判断）
@@ -1914,6 +2105,7 @@ export function renderHtml(board, ctx = {}) {
     ${scene?.lighting ? `<span class="chip lite">${esc(scene.lighting)}</span>` : ''}
     <span class="beatsref">${esc(t.beatsLabel(seg.sceneIndex, seg.cuts[0]?.beats?.[0], seg.cuts[seg.cuts.length - 1]?.beats?.[1]))}</span>
   </header>
+  ${candidatePanel}
   ${master}
   ${subs}
   <div class="duo">
@@ -2002,10 +2194,10 @@ h1,h2,h3{margin:0;font-weight:400}
 .gatepill{display:inline-flex;align-items:center;gap:6px;font:500 12px/1 var(--sans);border-radius:99px;padding:6px 12px}
 .gatepill.pass{color:var(--ok);border:1px solid var(--ok)}
 .gatepill.fail{color:var(--seal);border:1px solid var(--seal);background:var(--seal-soft)}
-.expo{font:500 11px/1 var(--sans);color:var(--ink-2);background:var(--panel);
+.expo,.sel-expo{font:500 11px/1 var(--sans);color:var(--ink-2);background:var(--panel);
   border:1px solid var(--rule-2);border-radius:2px;padding:7px 11px;cursor:pointer;transition:.15s}
-.expo:hover{border-color:var(--seal);color:var(--seal)}
-.expo:focus-visible{outline:2px solid var(--seal);outline-offset:2px}
+.expo:hover,.sel-expo:hover{border-color:var(--seal);color:var(--seal)}
+.expo:focus-visible,.sel-expo:focus-visible{outline:2px solid var(--seal);outline-offset:2px}
 
 .kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0 6px}
 @media(max-width:980px){.kpis{grid-template-columns:repeat(2,1fr)}}
@@ -2062,6 +2254,17 @@ section.top-sec{margin-top:34px}
 .seg-h b{font:500 14px/1 var(--mono);color:var(--seal)}
 .sec-badge{font:500 11px/1 var(--mono);border:1px solid var(--seal);color:var(--seal);border-radius:99px;padding:2px 8px}
 .beatsref{margin-left:auto;font-size:10.5px;color:var(--ink-3)}
+.cand{border:1px solid var(--rule-2);background:var(--side);padding:9px;display:grid;gap:7px}
+.cand-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.cand-h div{display:grid;gap:3px}.cand-h b{font:600 11px/1 var(--sans);color:var(--seal)}.cand-h small{font:400 10px/1.4 var(--sans);color:var(--ink-3)}
+.cand-clear{border:1px solid var(--rule-2);background:var(--paper);color:var(--ink-2);font:500 10px/1 var(--sans);padding:5px 7px;cursor:pointer}
+.cand-media{position:relative;aspect-ratio:16/9;background:var(--paper);overflow:hidden}.cand-media>img{width:100%;height:100%;display:block;object-fit:cover}
+.cand-cells{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr)}
+.cand-cells button{position:relative;border:1px solid rgba(255,255,255,.52);background:transparent;cursor:pointer;color:#fff;text-shadow:0 1px 3px #000}
+.cand-cells button:hover{background:rgba(138,51,36,.14)}.cand-cells button.on{background:rgba(138,51,36,.24);box-shadow:inset 0 0 0 3px var(--seal)}
+.cand-cells span{position:absolute;left:5px;top:5px;font:700 10px/1 var(--mono);background:rgba(0,0,0,.58);padding:3px 4px;border-radius:2px}
+.cand-cells em{position:absolute;right:6px;top:5px;min-width:20px;height:20px;border-radius:50%;background:var(--seal);font:700 11px/20px var(--mono);font-style:normal;text-align:center;display:none}.cand-cells button.on em{display:block}
+.cand-ph{height:100%;padding:10px;display:flex;flex-direction:column;gap:6px}.cand-ph b{font:600 11px/1 var(--sans);color:var(--ink-3)}.cand-ph pre{margin:0;overflow:auto;white-space:pre-wrap;font:400 9px/1.45 var(--mono);color:var(--ink-2)}
 .frame{width:100%;aspect-ratio:16/9;object-fit:cover;border:1px solid var(--rule-2);border-radius:2px;
   cursor:zoom-in;display:block;background:var(--side)}
 .frame.ph{display:flex;flex-direction:column;gap:6px;padding:10px 12px;cursor:default;overflow:hidden}
@@ -2168,7 +2371,7 @@ td.serif{font-family:var(--serif)}
 .foot{margin-top:40px;font-size:11px;color:var(--ink-3);border-top:1px solid var(--rule);padding-top:14px}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media print{
-  .expo,.copy,.shmore{display:none!important}
+  .expo,.sel-expo,.copy,.shmore,.cand-clear{display:none!important}
   .pp{max-height:none;overflow:visible}
   .duo{grid-template-columns:minmax(0,1fr)}
   .shots.clip{max-height:none}
@@ -2186,6 +2389,7 @@ td.serif{font-family:var(--serif)}
   <span class="sub">${esc(t.kicker)} · ${esc(t.epRange(eps[0]?.ep, eps[eps.length - 1]?.ep))}</span>
   <span class="right">
     <span class="gatepill ${failed.length ? 'fail' : 'pass'}">${failed.length ? '✗' : '✓'} ${esc(t.gatePill(gates.length - failed.length, gates.length))}</span>
+    ${board?.candidateMode === CANDIDATE_MODE ? `<button class="sel-expo" data-name="${esc(slug(board.source))}-selection.json">${esc(t.exportSelection)}</button>` : ''}
     <button class="expo" data-name="${esc(slug(board.source))}-storyboard.json">${esc(t.exportJson)}</button>
   </span>
 </header>
@@ -2260,7 +2464,7 @@ document.querySelectorAll('.shmore').forEach((btn) => {
 // 点图放大（主分镜图 / 子分镜图 / 批次场景图）
 const lb = document.getElementById('lightbox');
 document.addEventListener('click', (e) => {
-  const img = e.target.closest('img.frame, img.subf, img.bimg');
+  const img = e.target.closest('img.frame, img.subf, img.bimg, .cand-media>img');
   if (img) {
     lb.querySelector('img').src = img.src;
     lb.classList.add('on');
@@ -2288,6 +2492,42 @@ document.addEventListener('click', async (e) => {
   setTimeout(() => { btn.textContent = label; delete btn.dataset.done; }, 1600);
 });
 
+// 粗九宫格：按点击顺序记录，第一格是 start，最后一格是 end，中间是 bridge。
+const candidateSelections = new Map();
+function paintCandidate(cand) {
+  const order = candidateSelections.get(cand.dataset.segment) || [];
+  cand.querySelectorAll('[data-cell]').forEach((btn) => {
+    const i = order.indexOf(btn.dataset.cell);
+    btn.classList.toggle('on', i >= 0);
+    btn.querySelector('em').textContent = i >= 0 ? String(i + 1) : '';
+  });
+}
+document.querySelectorAll('.cand').forEach((cand) => {
+  const initial = (cand.dataset.initial || '').split(',').filter(Boolean);
+  candidateSelections.set(cand.dataset.segment, initial);
+  paintCandidate(cand);
+  cand.querySelectorAll('[data-cell]').forEach((btn) => btn.addEventListener('click', () => {
+    const order = candidateSelections.get(cand.dataset.segment) || [];
+    const i = order.indexOf(btn.dataset.cell);
+    if (i >= 0) order.splice(i, 1); else order.push(btn.dataset.cell);
+    candidateSelections.set(cand.dataset.segment, order);
+    paintCandidate(cand);
+  }));
+  cand.querySelector('.cand-clear')?.addEventListener('click', () => {
+    candidateSelections.set(cand.dataset.segment, []);
+    paintCandidate(cand);
+  });
+});
+
+document.querySelector('.sel-expo')?.addEventListener('click', (e) => {
+  const selections = [...candidateSelections.entries()].map(([segment, selected]) => ({ segment, selected }));
+  const payload = JSON.stringify({ mode: '${SELECTION_MODE}', selections }, null, 2);
+  const url = URL.createObjectURL(new Blob([payload], { type: 'application/json' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: e.currentTarget.dataset.name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+});
+
 // 导出：报告自己带着完整的 storyboard.json，下载的是它原样
 document.querySelector('.expo').addEventListener('click', (e) => {
   const btn = e.currentTarget;
@@ -2310,6 +2550,7 @@ document.querySelector('.expo').addEventListener('click', (e) => {
 const USAGE = `novel-storyboard.mjs — novel-storyboard skill 的确定性工具（分镜）
 
   seed <script.json> [--eps 1-3]              从剧本预填节拍工作底稿（打印到 stdout）
+  select <sb.json> <selection.json> [--out]   写回九宫格人工选择并标记对应段需要重排
   validate <sb.json> --script <script.json>   校验；有违规逐条打印并 exit 1
            [--outline] [--cast] [--art]       outline/cast 查提示词人名；art 只管显示名字
            [--shots <卡片目录>]                挂载镜头配方卡库，开 shot-recipe 门（不给就跳过）
@@ -2320,7 +2561,8 @@ const USAGE = `novel-storyboard.mjs — novel-storyboard skill 的确定性工�
          [--lang zh|en]                       报告界面语言（默认 zh；未指定时读取 JSON 顶层 lang 字段）
          [--shots <卡片目录>]                  报告的「配方」列显示卡名并标注建议景别／运镜的偏离
   export <sb.json> --script <script.json>     导出投产包：每段一个文件夹 <段号>/prompt.md
-         [--out .]                            + f1.prompt.md..fN.prompt.md（完整分镜图提示词）
+         [--out .]                            + candidate-grid.prompt.md / selection 模板
+                                              + f1.prompt.md..fN.prompt.md（完整分镜图提示词）
                                               + 分镜图 f1..fN.png + 根部 manifest.json
   stats                                       读当前目录的 .gates.jsonl，汇总哪道门最常响、
                                               哪道门从没响过（validate/checkup 会自动累积）
@@ -2384,6 +2626,21 @@ function main(argv) {
       epRange = m[2] ? [Number(m[1]), Number(m[2])] : [Number(m[1]), Number(m[1])];
     }
     console.log(JSON.stringify(seedFromScript(readJson(path), epRange), null, 2));
+    return;
+  }
+
+  if (cmd === 'select') {
+    const [boardPath, selectionPath] = rest;
+    if (!boardPath || !selectionPath) throw new Error('用法：select <storyboard.json> <selection.json> [--out selected-storyboard.json]');
+    const board = applyCandidateSelection(readJson(boardPath), readJson(selectionPath));
+    const json = JSON.stringify(board, null, 2) + '\n';
+    const out = flag(rest, '--out');
+    if (out) {
+      writeFileSync(resolve(out), json, 'utf8');
+      console.log(`✓ 九宫格选择已写入 ${resolve(out)}；按 selected 重排 cuts/edgePlans 后再 validate`);
+    } else {
+      process.stdout.write(json);
+    }
     return;
   }
 

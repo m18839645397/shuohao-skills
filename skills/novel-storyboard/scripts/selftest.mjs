@@ -12,6 +12,8 @@ import {
   CAMERA_PLAN_MODE,
   CAMERA_PLAN_PACES,
   CAMERA_MOVES,
+  CANDIDATE_GRID_SPEC,
+  CANDIDATE_MODE,
   CONTINUITY_MODE,
   CONTINUITY_STATE_FIELDS,
   CONTINUITY_TOKENS,
@@ -26,6 +28,9 @@ import {
   FRAME_PLAN_TEXT_FIELDS,
   FRAME_ROLES,
   FRAME_MOMENTS,
+  EDGE_PLAN_MODE,
+  EDGE_PLAN_FIELDS,
+  SELECTION_MODE,
   MUSIC_PLAN_FIELDS,
   HANDOFF_KINDS,
   PROMPT_DETAIL_MODE,
@@ -35,6 +40,9 @@ import {
   TRANSITION_PLAN_FIELDS,
   VISUAL_PLAN_FIELDS,
   buildFrameImagePrompt,
+  buildCandidateGridPrompt,
+  candidateSelectionBounds,
+  applyCandidateSelection,
   exportPack,
   H3_I2VA_LINE,
   SHOT_SIZES,
@@ -184,6 +192,46 @@ const adaptiveFrameDoc = (density = 'balanced', role = 'dialogue') => {
   };
   doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt
     .replace('[Shot 1] ', `[Shot 1] ${FRAME_ENTRY_TOKENS.en}. `);
+  return doc;
+};
+
+const candidateGridDoc = () => {
+  const doc = adaptiveFrameDoc();
+  doc.candidateMode = CANDIDATE_MODE;
+  doc.selectionMode = SELECTION_MODE;
+  doc.edgePlanMode = EDGE_PLAN_MODE;
+  const seg = doc.episodes[0].segments[0];
+  const cells = CANDIDATE_GRID_SPEC.map((spec) => ({
+    ...spec,
+    prompt: `A rough ${spec.size} composition showing the ${spec.moment} phase with the same woman, suitcase, muddy path and fog direction clearly readable`,
+  }));
+  seg.candidateBoard = { mode: CANDIDATE_MODE, cells, selected: ['G2', 'G5', 'G8'], needsReplan: false };
+  const makeCut = (id, camera, transition, moment) => {
+    const cell = cells.find((x) => x.id === id);
+    const cut = structuredClone(seg.cuts[0]);
+    cut.seconds = 2;
+    cut.candidateId = id;
+    cut.size = cell.size;
+    cut.camera = camera;
+    cut.transition = transition;
+    cut.cameraPlan = {
+      ...cut.cameraPlan,
+      pace: camera === 'Static Shot' ? 'static' : 'slow',
+      magnitude: camera === 'Static Shot' ? 'none' : 'subtle',
+    };
+    cut.framePlan.moment = moment;
+    cut.frame = `${SHOT_SIZES[cell.size].phrase}, ${cell.prompt}, cinematic film still, 16:9`;
+    return cut;
+  };
+  seg.cuts = [
+    makeCut('G2', 'Static Shot', 'straight-cut', 'entry'),
+    makeCut('G5', 'Static Shot', 'cut-on-action', 'transition'),
+    makeCut('G8', 'Push In', 'reveal-cut', 'result'),
+  ];
+  seg.edgePlans = [
+    { from: 'G2', to: 'G5', camera: 'Static Shot', transition: 'cut-on-action', pace: 'static', magnitude: 'none', target: 'the first movement of her rear heel', focus: 'keep the woman and suitcase legible', intent: 'preserve the action direction before the cut' },
+    { from: 'G5', to: 'G8', camera: 'Push In', transition: 'reveal-cut', pace: 'slow', magnitude: 'subtle', target: 'the suitcase pressed against her chest', focus: 'shift attention from the path to the guarded prop', intent: 'finish on the visible result of her decision' },
+  ];
   return doc;
 };
 
@@ -389,7 +437,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 22, '二十二道门');
+eq(gateReport(FIXTURE, CTX).length, 23, '二十三道门');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -859,6 +907,50 @@ ok(gate(FIXTURE, 'frame-density', CTX).ok && gate(FIXTURE, 'frame-density', CTX)
 }
 ok(gate(FIXTURE, 'frame-entry-state', CTX).ok && gate(FIXTURE, 'frame-entry-state', CTX).detail.includes('跳过'), '旧 storyboard 未启用 frameEntryMode 时明确跳过');
 
+// candidate-grid-selection — 单次粗九宫格、人工顺序选择、edge-driven 衔接
+{
+  const doc = candidateGridDoc();
+  ok(gate(doc, 'candidate-grid-selection', {}).ok, '九格、人工选择、cuts 和 edgePlans 完整对账时通过');
+  eq(CANDIDATE_GRID_SPEC.length, 9, '候选板固定九格');
+  eq(CANDIDATE_GRID_SPEC.slice(0, 3).every((x) => x.moment === 'entry'), true, '第一行固定动作入口态');
+  eq(CANDIDATE_GRID_SPEC.slice(6).every((x) => x.moment === 'result'), true, '第三行固定动作结果态');
+  eq(EDGE_PLAN_FIELDS.length, 3, '边运镜包含目标、焦点和导演意图');
+  const seg = doc.episodes[0].segments[0];
+  const prompt = buildCandidateGridPrompt(seg);
+  ok(prompt.includes('ONE rough 3-by-3 storyboard contact sheet'), '九宫格只用一次粗图调用');
+  ok(prompt.includes(seg.candidateBoard.cells[0].prompt) && prompt.includes(seg.candidateBoard.cells[8].prompt), '九格描述全部进入候选图提示词');
+  ok(prompt.includes('Do not draw cell numbers'), '候选图不让模型画乱码编号');
+  eq(candidateSelectionBounds(seg).min, 3, '6秒段至少选择3格');
+}
+{
+  const doc = candidateGridDoc();
+  doc.episodes[0].segments[0].candidateBoard.cells.pop();
+  ok(!gate(doc, 'candidate-grid-selection', {}).ok, '候选不足九格被拦');
+}
+{
+  const doc = candidateGridDoc();
+  doc.episodes[0].segments[0].candidateBoard.selected = ['G5', 'G2', 'G8'];
+  const detail = gate(doc, 'candidate-grid-selection', {}).detail;
+  ok(detail.includes('第一张必须') && detail.includes('顺序必须'), '选择没有从 entry 向 result 推进被拦');
+}
+{
+  const doc = candidateGridDoc();
+  doc.episodes[0].segments[0].edgePlans.pop();
+  ok(!gate(doc, 'candidate-grid-selection', {}).ok, '相邻选择缺 edgePlan 被拦');
+}
+{
+  const doc = candidateGridDoc();
+  doc.episodes[0].segments[0].edgePlans[0].camera = 'Pull Out';
+  ok(gate(doc, 'candidate-grid-selection', {}).detail.includes('必须等于目标 cut'), '边运镜与目标 cut 不一致被拦');
+}
+{
+  const doc = candidateGridDoc();
+  const selected = applyCandidateSelection(doc, { mode: SELECTION_MODE, selections: [{ segment: 'E01-01', selected: ['G1', 'G4', 'G7'] }] });
+  eq(selected.episodes[0].segments[0].candidateBoard.selected.join(','), 'G1,G4,G7', 'selection.json 可写回对应段');
+  ok(selected.episodes[0].segments[0].candidateBoard.needsReplan, '写回选择后明确标记 cuts/edgePlans 需要重排');
+}
+ok(gate(FIXTURE, 'candidate-grid-selection', CTX).ok && gate(FIXTURE, 'candidate-grid-selection', CTX).detail.includes('跳过'), '旧 storyboard 未启用 candidateMode 时明确跳过');
+
 // style-phrase — 同剧分镜图画风不许漂
 {
   eq(DEFAULT_STYLE, 'realistic', '默认半写实');
@@ -1090,6 +1182,16 @@ eq(GATE_LOG, '.gates.jsonl', '日志文件名固定');
   ok(pack.files.some((f) => f.path === 'out/manifest.json'), '--out 改导出目录');
   ok(pack.files.some((f) => f.path === 'out/E01-01/prompt.md'), '段文件夹跟着 --out 走');
 }
+{
+  const doc = candidateGridDoc();
+  const pack = exportPack(doc, null, { imageExists: () => false });
+  ok(pack.files.some((f) => f.path === 'E01-01/candidate-grid.prompt.md'), '投产包导出单次粗九宫格提示词');
+  ok(pack.files.some((f) => f.path === 'E01-01/candidate-selection.template.json'), '投产包导出人工选择模板');
+  const m = pack.manifest[0];
+  eq(m.candidateGrid.image, 'E01-01/candidate-grid.png', 'manifest 约定粗九宫格图片路径');
+  eq(m.candidateGrid.selected.join(','), 'G2,G5,G8', 'manifest 带人工选择顺序');
+  eq(m.edgePlans.length, 2, 'manifest 带相邻终稿的 edgePlans');
+}
 
 /* ---------------- validateStoryboard 结构检查 ---------------- */
 
@@ -1126,6 +1228,9 @@ eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运
 eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
 eq(seeded.framePlanMode, FRAME_PLAN_MODE, 'seed 默认开启分镜图自适应画面密度');
 eq(seeded.frameEntryMode, FRAME_ENTRY_MODE, 'seed 默认强制段首 f1 对齐动作入口态');
+eq(seeded.candidateMode, CANDIDATE_MODE, 'seed 默认开启单图粗九宫格候选模式');
+eq(seeded.selectionMode, SELECTION_MODE, 'seed 默认使用人工顺序选择');
+eq(seeded.edgePlanMode, EDGE_PLAN_MODE, 'seed 默认使用边驱动运镜计划');
 eq(seeded.continuityMode, CONTINUITY_MODE, 'seed 默认开启状态链连续性');
 eq(seeded.params.minSegmentSeconds, 5, '新 seed 默认每段至少 5 秒');
 eq(seeded.params.maxSegmentSeconds, 10, '新 seed 默认每段最多 10 秒');
@@ -1175,7 +1280,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 22 / 22'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 23 / 23'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
 ok(html.includes('主分镜图 · #1 未生成'), '主分镜图缺图时显示占位不装有');
@@ -1215,6 +1320,15 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   ok(frameHtml.includes(`data-copy="${prompt.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}"`), 'html 复制按钮使用完整 imagePrompt');
 }
 {
+  const doc = candidateGridDoc();
+  const candidateHtml = renderHtml(doc, { imageExists: (path) => path.endsWith('candidate-grid.png') });
+  ok(candidateHtml.includes('E01-01/candidate-grid.png'), 'html 嵌入单张粗九宫格');
+  eq((candidateHtml.match(/data-cell="G\d"/g) ?? []).length, 9, 'html 在九宫格上确定性叠加 G1–G9 点击区');
+  ok(candidateHtml.includes('class="sel-expo"'), '候选模式报告提供 selection.json 导出按钮');
+  ok(candidateHtml.includes('candidateSelections'), '报告内置九格点击顺序状态');
+  ok(candidateHtml.includes('human-ordered'), '导出的选择文件带 selectionMode');
+}
+{
   const withImg = renderHtml(FIXTURE, { ...CTX, imageExists: () => true });
   ok(withImg.includes('"E01-01/f1.png"'), '主分镜图从段文件夹读');
   ok(withImg.includes('"E01-01/f2.png"'), '子分镜图同样从段文件夹读');
@@ -1248,7 +1362,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 22 / 22'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 23 / 23'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
   ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');

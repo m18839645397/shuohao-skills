@@ -13,6 +13,9 @@
   "promptDetailMode": "production-rich",
   "framePlanMode": "adaptive-density",
   "frameEntryMode": "start-boundary",
+  "candidateMode": "single-grid-rough",
+  "selectionMode": "human-ordered",
+  "edgePlanMode": "edge-driven",
   "continuityMode": "state-linked",
   "style": "realistic",
   "promptLang": "zh",
@@ -23,7 +26,7 @@
 
 `promptLang` 可省略（**默认 `en`——官方规范口径**）：整条英文、禁角色名，台词在 `<d>[Chinese]` 里保留原文。设成 `zh` 可切整条中文（对齐指令、字段名、镜头标记都有中文版，人名放行）——偏离官方推荐的备选项。`style` 可省略（默认 `realistic`），预设与角色/场景 skill 同名对齐（`realistic` / `cinematic` / `ghibli` / `inkwash`），对应的英文短语（如 `cinematic film still`）必须出现在**每条**分镜图提示词里——同一部剧的分镜图不许画风漂，门查。
 
-`seed` 默认写入 5–10 秒段长、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"`、`frameEntryMode: "start-boundary"` 与 `continuityMode: "state-linked"`。其中 frameEntryMode 强制每段 f1 对齐动作前入口态，动作仅在0.00秒之后开始。
+`seed` 默认写入上述模式。每段先用一次 `single-grid-rough` 生成粗九宫格，人工顺序选择后重排 cuts，并用 `edge-driven` 规划相邻终稿衔接；详见 `candidate-grid.md`。
 
 ## segment（段）
 
@@ -32,6 +35,8 @@
 | `id` | string | 段号 `E01-01`：集号 + 两位序号，**按顺序连号**。它就是素材文件名（`E01-01.mp4` / `E01-01-f1.png`） |
 | `sceneIndex` | int | 这一段在剧本该集的第几场（1 起）。段内全部分镜同场 |
 | `cuts` | cut[] | 段内分镜，按时间顺序。段总秒数 = 分镜秒数之和，**不单独存**——少一处会漂的冗余 |
+| `candidateBoard` | object | `mode` + 固定九格 `cells` + 人工 `selected` + `needsReplan`。九格结构与选择数量见 `candidate-grid.md` |
+| `edgePlans` | object[] | 相邻人工选择之间的运镜边，恰好 N−1 条；from/to、camera、transition、pace、magnitude、target、focus、intent |
 | `handoff` | object | 段间交接：本集第一段 `episode-start`；其余为 `continuous` / `scene-change` / `time-jump`。连续段带 fromSegment、visualCarry、motionCarry、audioCarry |
 | `audioPlan` | object | 投产音频计划：`soundscape` 含 baseline/build/events/aftermath；`music.mode` 为 scored 时含 style/instrumentation/arc/sync，为 none 时配乐字段写 N/A/无 |
 | `h3Prompt` | string | **一段一条 H3 视频提示词**，正文语言跟 `promptLang`（默认中文），结构见 `references/h3-prompt.md` |
@@ -42,6 +47,7 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `beats` | [int, int] | 认领该场第几拍到第几拍（含两端）。**每个节拍必须被恰好一个分镜认领**，按顺序、连续 |
+| `candidateId` | string | 本切来自人工选择的 G1–G9 哪一格；顺序必须与 candidateBoard.selected 一致 |
 | `sourceState` | object | 跨层剧情状态：`before` 必须精确复制认领首拍的 `stateBefore`，`after` 必须精确复制认领末拍的 `stateAfter`。仅在上游剧本启用状态链时必填 |
 | `seconds` | number | 分镜时长，2–5 秒——短剧的注意力节奏是硬门。认领节拍的台词秒数必须装得下 |
 | `size` | enum | 景别：`extreme-wide` 大远景 / `wide` 全景 / `medium` 中景 / `close` 特写 / `extreme-close` 大特写 |
@@ -87,8 +93,9 @@ non_diegetic_music: …（1–3 句，没有就 N/A）
 7. 丰富模式下，`visualPlan` 六层逐字进入本切；`audioPlan.soundscape` 四层逐字进入 overall_soundscape；有配乐时 `audioPlan.music` 四层逐字进入 non_diegetic_music，无配乐明确 N/A/无。英文每项至少 24 字符，中文至少 10 字符
 8. 自适应分镜图模式下，`framePlan` 按镜头功能使用 sparse/balanced/rich 的内容预算，字段与数量确定性校验；报告和 export 输出脚本组装后的完整 `imagePrompt`
 9. 入口帧模式下，每段 f1 必须 `moment=entry`，五项 `entryStatePrompt` 完整英文，禁止动作中段/结果语义；[Shot 1] 声明动作仅在0.00秒后开始
-10. 连续模式下，相邻 cut 状态八项逐字相等，Shot 2 起有同一瞬间承接句和五项 transitionPlan；连续 segment 的末态/首态相等，handoff 三项进入下一段 Shot 1 与声景。scene-change/time-jump 显式标记后允许断开
-11. 上游剧本启用状态链时，每切 `sourceState.before/after` 与认领节拍的计算前态/后态逐项相等；旧剧本没有状态链时明确跳过
+10. 九宫格模式下，每段恰好九格；人工选择从 entry 到 result，数量符合段长；cuts/candidateId 与 N−1 条 edgePlans 对账
+11. 连续模式下，相邻 cut 状态八项逐字相等，Shot 2 起有同一瞬间承接句和五项 transitionPlan；连续 segment 的末态/首态相等，handoff 三项进入下一段 Shot 1 与声景
+12. 上游剧本启用状态链时，每切 `sourceState.before/after` 与认领节拍的计算前态/后态逐项相等
 
 ## 时长约束链
 

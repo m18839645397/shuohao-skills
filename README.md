@@ -14,7 +14,7 @@
 | [**novel-characters**](skills/novel-characters) | 把大纲定下的角色做成角色设定集：先做群像视觉矩阵，按 importance 分配签名锚点；重要角色先锁身份再展开三视图，避免主配角都成为路人。报告语言与出图风格可选 |
 | [**novel-art**](skills/novel-art) | 给 AI 短剧出美术设定集（场景 + 叙事道具）：一致性锚点、光照与状态变体、尺度参照、无人无手白底提示词。吃 outline.json 预填清单，11 道质量门全部脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算；每场入口状态 + 每个动作拍 `statePatch` 计算剧情状态链，台词本按角色聚合并直接对接 TTS。11 道质量门全部脚本检查 |
-| [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：每段 f1 从动作前 entry state 开始，动作仅在0.00秒后发生；再完成运镜、丰富 H3、自适应 sparse/balanced/rich 画面密度和镜头/段间状态链。22 道质量门全部脚本检查 |
+| [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：每段一次生成粗九宫格，人工顺序选 N 格后再出高清终稿；f1 从动作前 entry state 开始，相邻终稿由 edgePlans 处理。23 道质量门全部脚本检查 |
 
 **五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
 

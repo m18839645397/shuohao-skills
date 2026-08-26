@@ -1,6 +1,6 @@
 ---
 name: novel-storyboard
-version: 1.11.0
+version: 1.12.0
 description: |
   给 AI 短剧出分镜：三层结构——段（新 seed 默认 5–10 秒，一次视频生成）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
@@ -10,11 +10,12 @@ description: |
   速度/幅度、结束构图、导演意图与转场；投产级丰富模式逐切写空间、光线、主体、动作、效果与连续性，
   静态分镜图按镜头功能自动分配 sparse/balanced/rich 画面密度并确定性组装完整 imagePrompt，
   每段 f1 强制对齐动作前 entry state，人物动作只在0.00秒之后开始，
+  每段可先用一次调用生成粗略九宫格，人工按顺序选择 N 格后再分别生成高清终稿，并以 edgePlan 处理相邻衔接，
   逐段写分层声景和配乐动态；状态链模式对账相邻镜头与连续段的人物位置、姿势、视线、道具、光效、
   银幕方向和动作/声音桥，避免硬切与状态重置。
   产出 storyboard.json + Markdown + 单页评审报告（分镜节奏带 / 分集分镜表 / 生成批次单 /
   配音对齐单，含导出 JSON）。分镜图出图拿场景与角色设定图当参考图走 codex $imagegen（可选）。
-  22 道质量门全部由脚本确定性检查（含分镜图自适应密度、段首入口帧、剧本 sourceState 跨层继承；shot-recipe 可选挂载，不挂就明说跳过）；
+  23 道质量门全部由脚本确定性检查（含九宫格人工选择、边运镜、分镜图密度、段首入口帧、剧本状态继承；shot-recipe 可选挂载）；
   export 一键导出 H3 提示词、逐切完整分镜图提示词和按 Picture 序的分镜图清单。零依赖、零 API key，用当前会话额度。
   Use when asked to 分镜、出分镜、镜头表、切镜、storyboard for AI short drama。
 allowed-tools:
@@ -82,16 +83,21 @@ metadata:
 node {baseDir}/scripts/novel-storyboard.mjs seed <script.json> --eps 1-3 > <workdir>/storyboard.json
 ```
 
-确定性展开：每场节拍的编号、动作/台词、秒数、说话人和 `delivery` 进入 `seedScenes`；若剧本启用了状态链，每拍还带计算好的 `stateBefore` / `stateAfter`。顶层写入 `cameraPlanMode`、`promptDetailMode`、`framePlanMode`、`frameEntryMode: "start-boundary"` 和 `continuityMode`。**秒数与剧情状态都不要让模型重新估。**
+确定性展开逐拍状态，并默认写入 `candidateMode: "single-grid-rough"`、`selectionMode: "human-ordered"`、`edgePlanMode: "edge-driven"` 及现有运镜、丰富度、入口帧、连续性模式。
 
 ### Step 2 — 逐集分段切镜
 
 每集一份任务，能并发就并发。每份任务拿到：
 
-- `{baseDir}/references/storyboard-pass.md`、`{baseDir}/references/camera-direction.md`、`{baseDir}/references/prompt-detail.md`、`{baseDir}/references/frame-entry.md`、`{baseDir}/references/frame-density.md`、`{baseDir}/references/continuity.md` 和 `{baseDir}/references/schema.md`（读它们，照着做）
+- `{baseDir}/references/storyboard-pass.md`、`camera-direction.md`、`prompt-detail.md`、`candidate-grid.md`、`frame-entry.md`、`frame-density.md`、`continuity.md` 和 `schema.md`（读它们，照着做）
 - 该集的 seedScenes 底稿 + 场景卡（art.json 的锚点与光照提示词）+ 角色卡（cast.json 的形象要点）
 
-流程：**先按剧情单元分段**，再切2–5秒分镜。每切先复制 `sourceState.before/after`，写 `startState/endState`；随后确定 `framePlan.moment`。每段 f1 强制 `entry`，把 startState 翻成五项英文 `entryStatePrompt`；后续子分镜才允许 transition/impact/result。再填画面密度、运镜、视频视觉和连续性计划。
+流程先按剧情单元分段，为每段写固定九格 `candidateBoard.cells`，用 export 的 `candidate-grid.prompt.md` 一次生成粗图。报告中人工按播放顺序选 N 格并导出 selection.json；`select` 写回后，按 selected 重排 cuts，补齐 candidateId 与 N−1 条 edgePlans，再生成高清终稿与 H3。
+
+```bash
+node {baseDir}/scripts/novel-storyboard.mjs select <storyboard.json> <selection.json> \
+  --out <storyboard-selected.json>
+```
 
 **画面密度不是剧情强度的同义词**：新空间定场和复杂关系用 rich；普通对话用 balanced；反应、停顿和手部/道具特写用 sparse。强烈情绪的脸部特写仍应克制，靠微表情、材质、光影和留白，而不是塞背景物件。最终出图不直接使用基础 `frame`，必须使用报告复制按钮或 export 生成的完整 imagePrompt。
 
@@ -107,7 +113,7 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
   [--shots </path/to/cards>]
 ```
 
-22 道质量门全是代码：`frame-entry-state` 强制段首 f1 是动作前入口态、五项开始状态完整、H3 动作仅在0.00秒后开始；其余继续检查节拍、时长、运镜、画面密度、连续性、配方和跨层剧本状态。
+23 道质量门全是代码：新增 `candidate-grid-selection`，检查九格固定布局、人工选择数量和顺序、cuts/candidateId 对账、N−1 条 edgePlans 及目标 cut 运镜一致性。
 
 **有违规逐条修，改完重跑，直到通过。**
 
@@ -120,6 +126,7 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
 - **没有 codex 就整步跳过**，只交提示词，报告显示占位不装有
 - **参考图是命根子**：`-i` 挂上该段场景设定图（该光照状态）+ 画内角色的设定图 + 涉及道具的设定图，提示词只负责取景和此刻的姿态
 - **f1 不是动作代表帧**：它必须画 startState 的动作前入口态；奔跑、拍击、转身、开门等动作从0.00秒之后开始
+- **九宫格只做粗选**：每段先生成一张 `candidate-grid.png`；图片里不画编号，报告叠加 G1–G9。选中格子必须分别重生成高清 f1..fN
 - **链式参考也是硬要求**：f2 起额外挂本段 f1 + 立即上一切；连续段的下一段 f1 再挂上一段最后一帧。标准资产始终保留，防止链式漂移
 - 一格一次调用绝不批量；输出 `./<段号>/f<切序>.png`（f1 = 主分镜图，每段一个文件夹）
 - **默认先出三张代表图**：rich 定场/高潮、balanced 对话/移动、sparse 反应/特写各一张；三档信息量都正确再往后补
@@ -152,6 +159,9 @@ node {baseDir}/scripts/novel-storyboard.mjs render <剧名>-storyboard.json --ht
     ├── f2.png …                   ← 子分镜图
     ├── f1.prompt.md               ← 主分镜图完整 imagePrompt
     ├── f2.prompt.md …             ← 子分镜图完整 imagePrompt
+    ├── candidate-grid.png         ← 一次调用生成的粗九宫格
+    ├── candidate-grid.prompt.md   ← 九宫格提示词
+    ├── candidate-selection.template.json
     └── prompt.md                  ← H3 提示词（export 生成）
 ```
 
@@ -194,7 +204,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-350 项断言，不调模型、不花额度。22 道质量门每一道都有击穿用例。改完脚本先跑这个。
+379 项断言，不调模型、不花额度。23 道质量门每一道都有击穿用例。改完脚本先跑这个。
 
 ## 自带样例
 
