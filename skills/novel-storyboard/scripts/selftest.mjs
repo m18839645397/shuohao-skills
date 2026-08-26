@@ -49,6 +49,7 @@ import {
   seedFromScript,
   segSeconds,
   slug,
+  sourceStateEqual,
   validateStoryboard,
 } from './novel-storyboard.mjs';
 
@@ -207,6 +208,69 @@ const segmentHandoffDoc = (kind = 'continuous') => {
   };
 };
 
+const sourceEntryState = () => ({
+  characters: {
+    C01: { position: '供桌左侧', pose: '背向南门站立', gaze: '供桌', emotion: '克制饥饿' },
+    C02: { position: '南门外', pose: '抱着香烛奔跑', gaze: '供桌', emotion: '轻快' },
+  },
+  props: { P01: { holder: 'C02', position: '怀中', condition: '整捆未拆' } },
+  effectState: '香烟稀薄',
+  unfinishedAction: 'C02 正跨过门槛',
+});
+
+const stateLinkedScript = () => ({
+  source: '跨层状态测试',
+  continuityMode: CONTINUITY_MODE,
+  episodes: [{
+    ep: 1,
+    targetSeconds: 9,
+    scenes: [{
+      sceneId: 'S01', lighting: '清晨冷光', characters: ['C01', 'C02'], props: ['P01'],
+      continuity: { kind: 'episode-start', entryState: sourceEntryState() },
+      flow: [
+        {
+          action: '少年跑到供桌右侧，把白烛递向祖父。',
+          statePatch: {
+            characters: { C02: { position: '供桌右侧', pose: '右手递出白烛', gaze: 'C01' } },
+            props: { P01: { position: '两人之间', condition: '尚未完全交接' } },
+            unfinishedAction: 'C01 与 C02 同时接触 P01',
+          },
+        },
+        { speaker: 'C01', line: '够吃。快去。', delivery: '压低声音，回答短促' },
+        {
+          action: '祖父接过白烛，少年收回右手。',
+          statePatch: {
+            characters: { C01: { pose: '右手握紧白烛', gaze: 'P01' }, C02: { pose: '右手收回胸前' } },
+            props: { P01: { holder: 'C01', position: '祖父右手', condition: '蜡面被握出凹痕' } },
+            unfinishedAction: '无',
+          },
+        },
+      ],
+    }],
+  }],
+});
+
+const sourceStateBoard = (script) => {
+  const scene = expandScript(script).get(1).scenes[0];
+  const cuts = scene.beats.map((beat, i) => ({
+    beats: [i + 1, i + 1],
+    seconds: 3,
+    size: 'medium',
+    camera: 'Static Shot',
+    characters: ['C01', 'C02'],
+    props: ['P01'],
+    sourceState: { before: clone(beat.stateBefore), after: clone(beat.stateAfter) },
+    frame: 'medium shot, cinematic film still',
+  }));
+  return {
+    source: '跨层状态测试',
+    episodes: [{ ep: 1, segments: [{
+      id: 'E01-01', sceneIndex: 1, cuts,
+      h3Prompt: `${h3AlignmentLine(cuts)}\n\nintegrated_multimodal_description:\n[Shot 1] Static Shot.\n[Shot 2] At 00:03.000, Static Shot.\n[Shot 3] At 00:06.000, Static Shot.\n\noverall_soundscape: N/A.\n\nnon_diegetic_music: N/A.`,
+    }] }],
+  };
+};
+
 /* ---------------- expandScript ---------------- */
 
 const expanded = expandScript(SCRIPT);
@@ -218,8 +282,17 @@ eq(e1.scenes[1].beats.length, 22, '第 2 场 22 拍');
 eq(e1.scenes[0].beats[0].kind, 'action', '第 1 拍是动作');
 eq(e1.scenes[0].beats[0].seconds, 2.5, '动作按 2.5 秒计');
 eq(e1.scenes[0].beats[2].speaker, 'C03', '台词带说话人');
+ok(typeof e1.scenes[0].beats[2].delivery === 'string', '展开剧本保留台词 delivery');
 eq(e1.targetSeconds, 120, '目标秒数带出来');
 eq(expandScript(null).size, 0, '空剧本不崩');
+{
+  const script = stateLinkedScript();
+  const scene = expandScript(script).get(1).scenes[0];
+  eq(scene.continuityKind, 'episode-start', '展开剧本带场次连续关系');
+  ok(sourceStateEqual(scene.beats[0].stateAfter, scene.beats[1].stateBefore), '展开剧本把动作末态传给台词前态');
+  ok(sourceStateEqual(scene.beats[1].stateBefore, scene.beats[1].stateAfter), '台词拍前后状态保持不变');
+  eq(scene.beats[1].delivery, '压低声音，回答短促', '状态链剧本的 delivery 原样保留');
+}
 
 /* ---------------- H3 骨架推导 ---------------- */
 
@@ -264,13 +337,14 @@ eq(stats.dialogue.length, 19, '第 1 集 19 句台词全部对到段和切');
 ok(stats.dialogue.every((d) => /^E01-\d{2}$/.test(d.segment) && d.cut >= 1), '对齐单带段号和切序');
 eq(stats.episodes[0].withLines, 10, '台词段计数——本样例每段都带台词，纯画面收在分镜级');
 eq(paramsOf({}).maxSegmentSeconds, DEFAULT_PARAMS.maxSegmentSeconds, '默认段上限 15 秒');
+eq(paramsOf({}).minSegmentSeconds, 0, '旧 JSON 默认不强制段下限');
 eq(paramsOf({}).maxCutSeconds, 5, '默认分镜上限 5 秒');
 eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可调');
 
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 19, '十九道门');
+eq(gateReport(FIXTURE, CTX).length, 20, '二十道门');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -314,6 +388,13 @@ eq(gateReport(FIXTURE, CTX).length, 19, '十九道门');
   const g = gate(doc, 'segment-cap');
   ok(!g.ok, '段超 15 秒被拦');
   ok(g.detail.includes('E01-01'), '点名到段');
+}
+{
+  const doc = clone(FIXTURE);
+  doc.params = { minSegmentSeconds: 14, maxSegmentSeconds: 15 };
+  const g = gate(doc, 'segment-cap');
+  ok(!g.ok, '启用段下限后不足最短时长的段被拦');
+  ok(g.label.includes('14–15'), '质量门显示当前段长区间');
 }
 // cut-length
 {
@@ -485,6 +566,24 @@ eq(gateReport(FIXTURE, CTX).length, 19, '十九道门');
   doc.episodes[0].segments[1].cuts[0].startState = continuityState({ location: 'fleet command chamber', lightState: 'warm amber command lights', effectState: 'room remains stable' });
   ok(gate(doc, 'continuity', {}).ok, '明确 scene-change 后允许状态断开');
 }
+
+// script-state-link — 分镜状态必须继承所认领剧本节拍，而不只是分镜内部自洽
+{
+  const script = stateLinkedScript();
+  const doc = sourceStateBoard(script);
+  ok(gate(doc, 'script-state-link', { script }).ok, '每切 sourceState 对齐剧本节拍前后态时通过');
+  doc.episodes[0].segments[0].cuts[0].sourceState.after.props.P01.holder = 'C01';
+  const g = gate(doc, 'script-state-link', { script });
+  ok(!g.ok, '道具提前换手被跨层状态门拦截');
+  ok(g.detail.includes('认领末拍'), '诊断指出末态没有继承剧本');
+}
+{
+  const script = stateLinkedScript();
+  const doc = sourceStateBoard(script);
+  delete doc.episodes[0].segments[0].cuts[1].sourceState;
+  ok(!gate(doc, 'script-state-link', { script }).ok, '分镜缺 sourceState 被拦');
+}
+ok(gate(FIXTURE, 'script-state-link', CTX).ok && gate(FIXTURE, 'script-state-link', CTX).detail.includes('跳过'), '旧剧本未启用状态链时跨层门兼容并明说跳过');
 
 // h3-structure — 对齐指令由分镜结构推导，逐字对账
 {
@@ -884,11 +983,21 @@ eq(seeded.source, '渡口', 'seed 带剧名');
 eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
 eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
 eq(seeded.continuityMode, CONTINUITY_MODE, 'seed 默认开启状态链连续性');
+eq(seeded.params.minSegmentSeconds, 5, '新 seed 默认每段至少 5 秒');
+eq(seeded.params.maxSegmentSeconds, 10, '新 seed 默认每段最多 10 秒');
 eq(seeded.episodes.length, 6, 'seed 全六集');
 eq(seeded.episodes[0].segments.length, 0, 'segments 留空给模型切');
 eq(seeded.episodes[0].seedScenes.length, 2, '工作底稿带两场');
 eq(seeded.episodes[0].seedScenes[0].beats.length, 13, '底稿带全部节拍');
 ok(seeded.episodes[0].seedScenes[0].beats[0].seconds > 0, '每拍带秒数');
+ok(seeded.episodes[0].seedScenes[0].beats.some((b) => b.kind === 'line' && typeof b.delivery === 'string'), 'seed 保留台词 delivery');
+{
+  const stateSeed = seedFromScript(stateLinkedScript());
+  const scene = stateSeed.episodes[0].seedScenes[0];
+  eq(scene.continuityKind, 'episode-start', 'seed 带场次连续关系');
+  ok(sourceStateEqual(scene.beats[0].stateAfter, scene.beats[1].stateBefore), 'seed 带可直接认领的逐拍状态快照');
+  eq(scene.beats[1].delivery, '压低声音，回答短促', 'seed 不再丢失 delivery');
+}
 eq(seedFromScript(SCRIPT, [2, 3]).episodes.map((e) => e.ep).join(','), '2,3', '--eps 区间过滤');
 eq(seedFromScript({}).episodes.length, 0, '空剧本不崩');
 
@@ -922,7 +1031,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 19 / 19'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 20 / 20'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
 ok(html.includes('主分镜图 · #1 未生成'), '主分镜图缺图时显示占位不装有');
@@ -987,7 +1096,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 19 / 19'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 20 / 20'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
   ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');

@@ -27,6 +27,12 @@ export const DEFAULT_PARAMS = {
   hookWindow: 3,       // 开场钩子必须在全集前几拍内兑现——短剧开场 3 秒定生死
 };
 
+export const SCRIPT_CONTINUITY_MODE = 'state-linked';
+export const SCRIPT_CONTINUITY_KINDS = ['episode-start', 'continuous', 'scene-change', 'time-jump'];
+export const SCRIPT_CHARACTER_STATE_FIELDS = ['position', 'pose', 'gaze', 'emotion'];
+export const SCRIPT_PROP_STATE_FIELDS = ['holder', 'position', 'condition'];
+export const SCRIPT_STATE_FIELDS = ['characters', 'props', 'effectState', 'unfinishedAction'];
+
 export function paramsOf(doc) {
   return { ...DEFAULT_PARAMS, ...(doc?.params ?? {}) };
 }
@@ -45,6 +51,58 @@ export function sceneSeconds(scene, params = DEFAULT_PARAMS) {
     else if (typeof b?.action === 'string') act += params.actionSeconds;
   }
   return { dialogue: r1(dlg), action: r1(act), total: r1(dlg + act) };
+}
+
+const plainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+const jsonClone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
+
+const stableValue = (value) => {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!plainObject(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableValue(value[key])]));
+};
+
+/** 剧情状态按键排序后比较，避免 JSON 属性顺序造成误报。 */
+export function scriptStateEqual(left, right) {
+  return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
+}
+
+/** 把动作拍的局部 statePatch 合并到当前剧情状态。 */
+export function applyScriptStatePatch(state, patch) {
+  const next = jsonClone(plainObject(state) ? state : {}) ?? {};
+  next.characters = plainObject(next.characters) ? next.characters : {};
+  next.props = plainObject(next.props) ? next.props : {};
+  if (!plainObject(patch)) return next;
+
+  if (plainObject(patch.characters)) {
+    for (const [id, delta] of Object.entries(patch.characters)) {
+      if (!plainObject(delta)) continue;
+      next.characters[id] = { ...(plainObject(next.characters[id]) ? next.characters[id] : {}), ...jsonClone(delta) };
+    }
+  }
+  if (plainObject(patch.props)) {
+    for (const [id, delta] of Object.entries(patch.props)) {
+      if (!plainObject(delta)) continue;
+      next.props[id] = { ...(plainObject(next.props[id]) ? next.props[id] : {}), ...jsonClone(delta) };
+    }
+  }
+  if (Object.hasOwn(patch, 'effectState')) next.effectState = patch.effectState;
+  if (Object.hasOwn(patch, 'unfinishedAction')) next.unfinishedAction = patch.unfinishedAction;
+  return next;
+}
+
+/**
+ * 从场次入口状态出发，逐拍计算 stateBefore / stateAfter。
+ * 台词拍不改变物理状态；说话时发生的动作必须拆成独立动作拍。
+ */
+export function scriptSceneTimeline(scene) {
+  let current = jsonClone(scene?.continuity?.entryState ?? {});
+  const beats = (scene?.flow ?? []).map((beat, index) => {
+    const stateBefore = jsonClone(current);
+    if (typeof beat?.action === 'string') current = applyScriptStatePatch(current, beat.statePatch);
+    return { index: index + 1, stateBefore, stateAfter: jsonClone(current) };
+  });
+  return { entryState: jsonClone(scene?.continuity?.entryState ?? {}), exitState: jsonClone(current), beats };
 }
 
 /* ------------------------------------------------------------------ */
@@ -122,13 +180,121 @@ const thText = (s) => typeof s === 'string' && s.trim();
 /** 动作描述必须是叙述体——台词只能进 dialogue 字段，混进 action 就没法计秒。 */
 const QUOTE_RE = /「|」|『|』|“|”/;
 
+function validateEntityState(entity, fields, owner, problems, { prop = false, cast = new Set() } = {}) {
+  if (!plainObject(entity)) {
+    problems.push(`${owner} 缺状态对象`);
+    return;
+  }
+  for (const field of fields) {
+    if (prop && field === 'holder') {
+      if (!(entity.holder === null || (thText(entity.holder) && cast.has(entity.holder)))) {
+        problems.push(`${owner}.holder 必须是本场角色 id 或 null`);
+      }
+    } else if (!thText(entity[field])) {
+      problems.push(`${owner}.${field} 为空`);
+    }
+  }
+  for (const field of Object.keys(entity)) {
+    if (!fields.includes(field)) problems.push(`${owner}.${field} 不是允许字段`);
+  }
+}
+
+function validateEntryState(state, scene, owner, problems) {
+  if (!plainObject(state)) {
+    problems.push(`${owner} 缺完整入口状态`);
+    return;
+  }
+  for (const field of SCRIPT_STATE_FIELDS) {
+    if (!Object.hasOwn(state, field)) problems.push(`${owner}.${field} 缺失`);
+  }
+  for (const field of Object.keys(state)) {
+    if (!SCRIPT_STATE_FIELDS.includes(field)) problems.push(`${owner}.${field} 不是允许字段`);
+  }
+  const cast = new Set(scene?.characters ?? []);
+  const props = new Set(scene?.props ?? []);
+  if (!plainObject(state.characters)) problems.push(`${owner}.characters 必须是对象`);
+  if (!plainObject(state.props)) problems.push(`${owner}.props 必须是对象`);
+  for (const id of cast) {
+    if (!plainObject(state.characters?.[id])) problems.push(`${owner}.characters 缺 ${id}`);
+  }
+  for (const id of Object.keys(state.characters ?? {})) {
+    if (!cast.has(id)) problems.push(`${owner}.characters.${id} 不在本场人物里`);
+    validateEntityState(state.characters[id], SCRIPT_CHARACTER_STATE_FIELDS, `${owner}.characters.${id}`, problems);
+  }
+  for (const id of props) {
+    if (!plainObject(state.props?.[id])) problems.push(`${owner}.props 缺 ${id}`);
+  }
+  for (const id of Object.keys(state.props ?? {})) {
+    if (!props.has(id)) problems.push(`${owner}.props.${id} 不在本场道具里`);
+    validateEntityState(state.props[id], SCRIPT_PROP_STATE_FIELDS, `${owner}.props.${id}`, problems, { prop: true, cast });
+  }
+  if (!thText(state.effectState)) problems.push(`${owner}.effectState 为空`);
+  if (!thText(state.unfinishedAction)) problems.push(`${owner}.unfinishedAction 为空；稳定状态明确写“无”`);
+}
+
+function validateStatePatch(patch, scene, owner, problems) {
+  if (!plainObject(patch)) {
+    problems.push(`${owner} 缺 statePatch`);
+    return;
+  }
+  const cast = new Set(scene?.characters ?? []);
+  const props = new Set(scene?.props ?? []);
+  const allowed = new Set(SCRIPT_STATE_FIELDS);
+  for (const field of Object.keys(patch)) {
+    if (!allowed.has(field)) problems.push(`${owner}.${field} 不是允许字段`);
+  }
+  let changes = 0;
+  if (Object.hasOwn(patch, 'characters')) {
+    if (!plainObject(patch.characters)) problems.push(`${owner}.characters 必须是对象`);
+    for (const [id, delta] of Object.entries(patch.characters ?? {})) {
+      if (!cast.has(id)) problems.push(`${owner}.characters.${id} 不在本场人物里`);
+      if (!plainObject(delta)) {
+        problems.push(`${owner}.characters.${id} 必须是对象`);
+        continue;
+      }
+      for (const [field, value] of Object.entries(delta)) {
+        changes += 1;
+        if (!SCRIPT_CHARACTER_STATE_FIELDS.includes(field)) problems.push(`${owner}.characters.${id}.${field} 不是允许字段`);
+        else if (!thText(value)) problems.push(`${owner}.characters.${id}.${field} 为空`);
+      }
+    }
+  }
+  if (Object.hasOwn(patch, 'props')) {
+    if (!plainObject(patch.props)) problems.push(`${owner}.props 必须是对象`);
+    for (const [id, delta] of Object.entries(patch.props ?? {})) {
+      if (!props.has(id)) problems.push(`${owner}.props.${id} 不在本场道具里`);
+      if (!plainObject(delta)) {
+        problems.push(`${owner}.props.${id} 必须是对象`);
+        continue;
+      }
+      for (const [field, value] of Object.entries(delta)) {
+        changes += 1;
+        if (!SCRIPT_PROP_STATE_FIELDS.includes(field)) problems.push(`${owner}.props.${id}.${field} 不是允许字段`);
+        else if (field === 'holder') {
+          if (!(value === null || (thText(value) && cast.has(value)))) problems.push(`${owner}.props.${id}.holder 必须是本场角色 id 或 null`);
+        } else if (!thText(value)) problems.push(`${owner}.props.${id}.${field} 为空`);
+      }
+    }
+  }
+  for (const field of ['effectState', 'unfinishedAction']) {
+    if (!Object.hasOwn(patch, field)) continue;
+    changes += 1;
+    if (!thText(patch[field])) problems.push(`${owner}.${field} 为空；稳定状态明确写“无”`);
+  }
+  if (changes === 0) problems.push(`${owner} 没有任何状态变化`);
+}
+
 export function gateReport(doc, ctx = {}) {
   const gates = [];
   const add = (id, label, ok, detail = '') => gates.push({ id, label, ok, detail });
   const eps = Array.isArray(doc?.episodes) ? doc.episodes : [];
   const params = paramsOf(doc);
   const stats = computeStats(doc);
-  const bad = { duration: [], lineLen: [], speaker: [], hook: [], hookOpen: [], noAction: [], prose: [], beats: [], chars: [], scenes: [] };
+  const bad = { duration: [], lineLen: [], speaker: [], hook: [], hookOpen: [], noAction: [], prose: [], continuity: [], beats: [], chars: [], scenes: [] };
+  const continuityRequired = doc?.continuityMode === SCRIPT_CONTINUITY_MODE;
+  if (doc?.continuityMode && !continuityRequired) {
+    bad.continuity.push(`continuityMode「${doc.continuityMode}」不支持，应为「${SCRIPT_CONTINUITY_MODE}」`);
+  }
 
   for (const [i, ep] of eps.entries()) {
     const st = stats.episodes[i];
@@ -165,13 +331,43 @@ export function gateReport(doc, ctx = {}) {
       }
     }
 
-    for (const sc of ep?.scenes ?? []) {
+    let previousScene = null;
+    let previousExitState = null;
+    for (const [sceneIndex, sc] of (ep?.scenes ?? []).entries()) {
       const cast = new Set(sc?.characters ?? []);
       let hasAction = false;
-      for (const b of sc?.flow ?? []) {
+      if (continuityRequired) {
+        const owner = `${label}第 ${sceneIndex + 1} 场`;
+        const continuity = sc?.continuity;
+        if (!plainObject(continuity)) {
+          bad.continuity.push(`${owner} 缺 continuity`);
+        } else {
+          if (!SCRIPT_CONTINUITY_KINDS.includes(continuity.kind)) {
+            bad.continuity.push(`${owner}.continuity.kind「${continuity.kind}」不合法`);
+          }
+          if (sceneIndex === 0 && continuity.kind !== 'episode-start') {
+            bad.continuity.push(`${owner} 是本集第一场，continuity.kind 必须是 episode-start`);
+          }
+          if (sceneIndex > 0 && continuity.kind === 'episode-start') {
+            bad.continuity.push(`${owner} 不是本集第一场，不能使用 episode-start`);
+          }
+          validateEntryState(continuity.entryState, sc, `${owner}.continuity.entryState`, bad.continuity);
+          if (sceneIndex > 0 && continuity.kind === 'continuous') {
+            if (previousScene?.sceneId !== sc?.sceneId || (previousScene?.lighting ?? '') !== (sc?.lighting ?? '')) {
+              bad.continuity.push(`${owner} 标记 continuous，但场景或光照发生变化`);
+            }
+            if (!scriptStateEqual(previousExitState, continuity.entryState)) {
+              bad.continuity.push(`${owner} 的入口状态没有继承上一场计算末态`);
+            }
+          }
+        }
+      }
+
+      for (const [beatIndex, b] of (sc?.flow ?? []).entries()) {
         if (typeof b?.action === 'string') {
           hasAction = true;
           if (QUOTE_RE.test(b.action)) bad.prose.push(`${label} ${sc?.sceneId ?? '?'}`);
+          if (continuityRequired) validateStatePatch(b.statePatch, sc, `${label}第 ${sceneIndex + 1} 场第 ${beatIndex + 1} 拍`, bad.continuity);
         }
         if (typeof b?.line === 'string') {
           if (lineChars(b.line) > params.maxLineChars) {
@@ -180,10 +376,15 @@ export function gateReport(doc, ctx = {}) {
           if (b.speaker !== 'VO' && !cast.has(b.speaker)) {
             bad.speaker.push(`${label} ${sc?.sceneId ?? '?'} 的「${b.speaker}」不在本场人物里`);
           }
+          if (continuityRequired && Object.hasOwn(b, 'statePatch')) {
+            bad.continuity.push(`${label}第 ${sceneIndex + 1} 场第 ${beatIndex + 1} 拍是台词拍，不能带 statePatch；物理动作请拆成动作拍`);
+          }
         }
       }
       // 纯对白无动作的场 = 广播剧，生成时没有画面可写
       if ((sc?.flow ?? []).length > 0 && !hasAction) bad.noAction.push(`${label} ${sc?.sceneId ?? '?'}`);
+      if (continuityRequired) previousExitState = scriptSceneTimeline(sc).exitState;
+      previousScene = sc;
     }
   }
 
@@ -226,6 +427,7 @@ export function gateReport(doc, ctx = {}) {
 
   const SKIP_OUTLINE = '未提供 outline.json，本门跳过（视为通过）';
   const SKIP_ART = '未提供 art.json，本门跳过（视为通过）';
+  const SKIP_CONTINUITY = `未启用 continuityMode=${SCRIPT_CONTINUITY_MODE}，剧本状态链检查跳过`;
 
   add('duration', `每集时长在目标 ±${Math.round(params.tolerance * 100)}% 内`, eps.length > 0 && bad.duration.length === 0, bad.duration.join('；'));
   add('line-length', `单句台词 ≤ ${params.maxLineChars} 字`, bad.lineLen.length === 0, bad.lineLen.join('；'));
@@ -234,6 +436,12 @@ export function gateReport(doc, ctx = {}) {
   add('hook-open', `钩子的具象在全集前 ${params.hookWindow} 拍内兑现（hookBeat 认领）`, eps.length > 0 && bad.hookOpen.length === 0, bad.hookOpen.join('；'));
   add('has-action', '每场至少一个动作节拍——纯对白的场是广播剧', eps.length > 0 && bad.noAction.length === 0, bad.noAction.join('；'));
   add('action-prose', '动作描述叙述体，台词只进 dialogue 字段', bad.prose.length === 0, bad.prose.join('；'));
+  add(
+    'continuity-contract',
+    '场次入口状态完整；动作拍以 statePatch 推进；连续场次继承计算末态',
+    bad.continuity.length === 0,
+    bad.continuity.length ? bad.continuity.join('；') : continuityRequired ? '' : SKIP_CONTINUITY,
+  );
   add('beats-claimed', '大纲爽点逐集认领', bad.beats.length === 0, outline ? bad.beats.join('；') : SKIP_OUTLINE);
   add('refs-characters', '角色引用对账大纲', bad.chars.length === 0, outline ? bad.chars.join('；') : SKIP_OUTLINE);
   add('refs-scenes', '场景／光照／道具对账美术设定', bad.scenes.length === 0, art ? bad.scenes.join('；') : SKIP_ART);
@@ -319,7 +527,7 @@ export function seedFromOutline(outline, epRange = null) {
       // 从大纲搬来的参考，写完删掉也行
       seedNote: `大纲梗概：${e.synopsis ?? ''}　候选场景：${(e.sceneIds ?? []).join('、')}　人物：${(e.characterIds ?? []).join('、')}`,
     }));
-  return { source: outline?.source ?? '', episodes };
+  return { source: outline?.source ?? '', continuityMode: SCRIPT_CONTINUITY_MODE, episodes };
 }
 
 /* ------------------------------------------------------------------ */
@@ -353,6 +561,7 @@ const GATE_LABELS_EN = {
   'hook-open': 'The hook\'s concrete image lands within the first {0} beats (claimed by hookBeat)',
   'has-action': 'At least one action beat per scene — a dialogue-only scene is radio drama',
   'action-prose': 'Action in narrative prose; dialogue only in dialogue entries',
+  'continuity-contract': 'Scene entry state is complete; action beats advance it through statePatch; continuous scenes inherit the computed exit state',
   'beats-claimed': 'Outline beats claimed per episode',
   'refs-characters': 'Character references audited against the outline',
   'refs-scenes': 'Scenes / lighting / props audited against the art bible',
@@ -363,6 +572,7 @@ const GATE_SKIPS_EN = {
     '未提供 script.json，本门跳过（视为通过）': 'script.json not provided — gate skipped (treated as passing)',
     '未提供 outline/cast，本门跳过（视为通过）': 'outline/cast not provided — gate skipped (treated as passing)',
     '未提供 cast.json，本门跳过（视为通过）': 'cast.json not provided — gate skipped (treated as passing)',
+    [`未启用 continuityMode=${SCRIPT_CONTINUITY_MODE}，剧本状态链检查跳过`]: `continuityMode=${SCRIPT_CONTINUITY_MODE} not enabled — script-state checks skipped`,
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {
@@ -1028,7 +1238,7 @@ function main(argv) {
 
     if (cmd === 'checkup') {
       const gates = gateReport(doc, ctx);
-      for (const g of gates) console.log(`${g.ok ? '✓' : '✗'} ${g.label}${!g.ok && g.detail ? ` — ${g.detail}` : ''}`);
+      for (const g of gates) console.log(`${g.ok ? '✓' : '✗'} ${g.label}${g.detail ? ` — ${g.detail}` : ''}`);
       const failedN = gates.filter((g) => !g.ok).length;
       console.log(failedN ? `\n✗ ${failedN} 项未过` : '\n✓ 全部通过');
       if (failedN) process.exit(1);

@@ -2,6 +2,24 @@
 
 本规则用于 `continuityMode: "state-linked"`。目标是把“连续”从一句自由文本变成可机械对账的状态链：相邻镜头可以换景别和机位，但切点两侧必须是同一剧情瞬间。
 
+## 先继承剧本 sourceState
+
+若上游 script.json 同样启用了 `continuityMode: "state-linked"`，`seedScenes` 的每拍都有计算好的 `stateBefore` / `stateAfter`。cut 认领 `[起拍, 止拍]` 后，先原样复制：
+
+```json
+{
+  "beats": [6, 8],
+  "sourceState": {
+    "before": "第 6 拍的 stateBefore 原对象",
+    "after": "第 8 拍的 stateAfter 原对象"
+  }
+}
+```
+
+`sourceState` 是剧情事实，回答“谁在哪里、保持什么姿态和情绪、道具归谁、动作进行到哪一步”；下面的 `startState/endState` 是摄影翻译，补充光线、画面方向和效果状态。先复制 sourceState，再写摄影状态，不能用通用模板替代剧本状态。
+
+第 20 道 `script-state-link` 会按 cut 的 `beats` 重新计算期望状态并逐项对账。它解决的是“分镜内部状态完全相等，却没有忠实继承剧本”的假连续。旧剧本没有状态模式时本门明确跳过。
+
 ## 每切 startState / endState
 
 ```json

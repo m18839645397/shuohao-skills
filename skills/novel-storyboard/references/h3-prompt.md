@@ -15,7 +15,7 @@ How the reference pictures align with the target video — Picture 1 (from Shot 
 （单分镜的段改用官方 I2VA 固定句：For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.）
 
 integrated_multimodal_description:
-[Shot 1] Cinematic, live-action, cold gray-green palette. 按 <Picture 1> 锚定构图，依次写 visualPlan 的空间、光线、主体、动作，cameraPlan 的运镜执行，再写效果、结束状态、连续性、导演意图和台词（全英文）。
+[Shot 1] Cinematic, live-action, cold gray-green palette. 先把 sourceState.before → sourceState.after 翻成可见动作，再按 <Picture 1> 锚定构图，依次写 visualPlan 的空间、光线、主体、动作，cameraPlan 的运镜执行，最后写效果、结束状态、连续性、导演意图和台词（全英文）。
 [Shot 2] At 00:03.000, continue directly from Shot 1 at the same instant, then anchor <Picture 2>: ……（**每个镜头独立一行**；先承接上一镜的状态和动作桥，再改变景别/机位）
 
 overall_soundscape: audioPlan.soundscape 的基底、渐强、事件、余韵四层。不复述台词。
@@ -58,6 +58,7 @@ non_diegetic_music: 有配乐时写 audioPlan.music 的类型、配器、动态�
 ## 连续性
 
 - 新 seed 默认 `continuityMode: "state-linked"`。
+- 上游剧本也启用状态链时，cut 先按认领节拍复制 `sourceState.before/after`。`[Shot k]` 的动作必须从 before 开始、停在 after，不得重新发明道具持有人或动作阶段。
 - 相邻 cut 的 `endState` 与 `startState` 八项逐字相等；Shot 2 起填 `transitionPlan`，明确切点、动作、光线、声音和轴线怎样跨切。
 - Shot 2 起必须含 `continue directly from Shot k at the same instant`；中文使用「在同一时刻直接承接镜头 k」。转场桥的视觉字段进入当前 Shot，audioCarry 进入 overall_soundscape。
 - 同场连续 segment 用 `handoff.kind=continuous`，段首写 `continue directly from segment E01-01 at the same instant`；换场/时间跳跃分别标记 `scene-change` / `time-jump`。

@@ -10,12 +10,13 @@
 - **逐集时长预算** — 台词按语速折算（默认 4.5 字/秒）、动作按节拍估时（默认 2.5 秒/拍），每集必须落在目标 ±15% 内。**一集三分钟就是三分钟**，写超写欠当场拦下，不流到生成环节才发现
 - **开场钩子 + 结尾悬念** — 每集都要落在纸面；**钩子不是标签是第一拍**：`hookBeat` 认领具象位置，必须在全集前 3 拍内冷开场兑现；认领的大纲爽点必须有戏扛
 - **画外音记号** — `VO` 统一标心声与旁白，谁的心声写在语气栏里，台词本里单独成组
+- **剧情状态链** — 每场只存一份完整入口状态，每个动作拍只写 `statePatch`；脚本逐拍计算前态/后态，分镜不再重新猜人物位置、道具归属和未完成动作
 
 产出 `script.json` + Markdown + 一个双击就能开的 `script-report.html`：
 
 ![script-report.html](assets/report.webp)
 
-## 质量门：10 道，全是代码
+## 质量门：11 道，全是代码
 
 与仓库里另外三个 skill 同一主张：**checklist 交给模型自觉是靠不住的**。
 
@@ -28,6 +29,7 @@
 | **钩子前 3 拍兑现** | `hookBeat` 认领钩子具象的位置，必须落在全集前 3 拍内——冷开场是门不是自觉，钩子和开场从此衔接得上 |
 | **每场至少一个动作节拍** | 纯对白的场是广播剧，AI 生成时没有画面可写 |
 | 动作叙述体 | 动作里不许出现引号台词——台词只能进 dialogue 字段 |
+| **剧情状态契约** | 场次入口状态完整；动作拍以非空 `statePatch` 推进；台词拍不改变物理状态；连续场次精确继承上一场计算末态 |
 | 爽点认领 | 大纲说这集有的爆点，剧本必须认领（给 `--outline` 才查，不给**明说跳过**） |
 | 角色对账 | 出场角色都在大纲角色表里（给 `--outline` 才查） |
 | 场景对账 | 场景存在、**光照状态是美术设定里登记过的**、道具存在（给 `--art` 才查） |
@@ -55,7 +57,7 @@ novel-art        → art.json     （哪里 + 手里拿的：美术资产）
 novel-script     → script.json  （戏：场次、节拍、台词）
 ```
 
-- `seed <outline.json> --eps 1-3` 确定性预填每集骨架：目标秒数、钩子、悬念、爽点认领、候选场景人物
+- `seed <outline.json> --eps 1-3` 确定性预填每集骨架并默认开启 `continuityMode: "state-linked"`
 - `validate --outline --art` 三向对账：角色、爽点、场景/光照/道具。剧本里写了美术没登记的光照状态，当场报——去 art.json 补状态，不是绕过门
 - `render --outline --art` 把报告里的 `C01` / `S01` 显示成人名和场景名——**数据里存编号，界面上看名字**
 
@@ -89,9 +91,10 @@ node scripts/novel-script.mjs slug "渡口"                         # 安全文�
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-script.mjs       seed / validate / checkup / render / slug
-  selftest.mjs           154 项断言，不调模型
+  selftest.mjs           168 项断言，不调模型
 references/
   schema.md              script.json 结构 + 时长折算规则
+  continuity-contract.md 场次入口状态、动作 statePatch 与逐拍归并
   script-pass.md         写戏：硬规则、手感规则、常见病
   report-style.md        报告的设计约定
 examples/
@@ -106,6 +109,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-154 项断言，覆盖时长引擎 / 统计 / 质量门逐项击穿 / seed / 渲染（含英文界面）/ 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
+168 项断言，覆盖时长引擎 / 剧情状态归并 / 11 道门逐项击穿 / seed / 渲染（含英文界面）/ 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
 
-**只在 macOS + Node 24 上实测过。** 代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但**没验过**。
+已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。

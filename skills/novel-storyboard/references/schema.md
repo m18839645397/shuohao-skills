@@ -2,7 +2,7 @@
 
 三层：**集 → 段（segment）→ 分镜（cut）**。
 
-- **段** = 一次视频生成调用，总时长 ≤ `maxSegmentSeconds`（默认 15 秒），不跨场次——换景必开新段
+- **段** = 一次视频生成调用；新 seed 默认 `min/maxSegmentSeconds = 5/10`，不跨场次——换景必开新段
 - **分镜** = 段内的一次剪切，`minCutSeconds`–`maxCutSeconds`（默认 2–5 秒），各自认领剧本节拍、带景别运镜和一张分镜图
 - **分镜图** = 每个分镜一张关键帧：第 1 切的是**主分镜图**（钉在 0.00 秒），其余是**子分镜图**（各钉在自己的切点时刻）。**每段一个文件夹**：`<段号>/f<切序>.png` + `prompt.md`（export 生成，内容就是 h3Prompt）
 
@@ -14,14 +14,14 @@
   "continuityMode": "state-linked",
   "style": "realistic",
   "promptLang": "zh",
-  "params": { "maxSegmentSeconds": 15, "minCutSeconds": 2, "maxCutSeconds": 5, "maxOnScreen": 3, "tolerance": 0.15 },
+  "params": { "minSegmentSeconds": 5, "maxSegmentSeconds": 10, "minCutSeconds": 2, "maxCutSeconds": 5, "maxOnScreen": 3, "tolerance": 0.15 },
   "episodes": [ { "ep": 1, "segments": [ ... ] } ]
 }
 ```
 
 `promptLang` 可省略（**默认 `en`——官方规范口径**）：整条英文、禁角色名，台词在 `<d>[Chinese]` 里保留原文。设成 `zh` 可切整条中文（对齐指令、字段名、镜头标记都有中文版，人名放行）——偏离官方推荐的备选项。`style` 可省略（默认 `realistic`），预设与角色/场景 skill 同名对齐（`realistic` / `cinematic` / `ghibli` / `inkwash`），对应的英文短语（如 `cinematic film still`）必须出现在**每条**分镜图提示词里——同一部剧的分镜图不许画风漂，门查。
 
-`seed` 默认写入 `cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"` 与 `continuityMode: "state-linked"`。三者分别控制运镜执行、提示词丰富度和镜间/段间状态链，详见 `camera-direction.md`、`prompt-detail.md`、`continuity.md`。旧 JSON 没有对应模式字段时继续按旧规则校验，报告会明确提示该项检查已跳过。
+`seed` 默认写入 5–10 秒段长、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"` 与 `continuityMode: "state-linked"`。三种模式分别控制运镜执行、提示词丰富度和镜间/段间状态链；若上游 script.json 同样启用状态链，seed 还携带逐拍剧情状态。旧 storyboard.json 没有 `minSegmentSeconds` 时只守大于 0 和默认 15 秒上限；旧 script.json 没有状态模式时跨层门明确跳过。
 
 ## segment（段）
 
@@ -40,6 +40,7 @@
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `beats` | [int, int] | 认领该场第几拍到第几拍（含两端）。**每个节拍必须被恰好一个分镜认领**，按顺序、连续 |
+| `sourceState` | object | 跨层剧情状态：`before` 必须精确复制认领首拍的 `stateBefore`，`after` 必须精确复制认领末拍的 `stateAfter`。仅在上游剧本启用状态链时必填 |
 | `seconds` | number | 分镜时长，2–5 秒——短剧的注意力节奏是硬门。认领节拍的台词秒数必须装得下 |
 | `size` | enum | 景别：`extreme-wide` 大远景 / `wide` 全景 / `medium` 中景 / `close` 特写 / `extreme-close` 大特写 |
 | `camera` | enum | 运镜，**直接用 H3 官方词表**（原样字符串）：`Static Shot` `Push In` `Pull Out` `Zoom In/Out` `Pan Left/Right` `Truck Left/Right` `Tilt Up/Down` `Pedestal Up/Down` `Arc Shot` `Tracking Shot` `Shake Slightly/Strongly` `POV` `Roll Clockwise/Counterclockwise` |
@@ -82,7 +83,8 @@ non_diegetic_music: …（1–3 句，没有就 N/A）
 6. 每个分镜的运镜词必须出现在自己的 `[Shot k]`；电影化模式下，动态运镜的速度/幅度、转场 token、`cameraPlan` 五个文本字段逐字对账，固定/动态参数匹配，并拦截英文提示词中同切出现多个主运镜
 7. 丰富模式下，`visualPlan` 六层逐字进入本切；`audioPlan.soundscape` 四层逐字进入 overall_soundscape；有配乐时 `audioPlan.music` 四层逐字进入 non_diegetic_music，无配乐明确 N/A/无。英文每项至少 24 字符，中文至少 10 字符
 8. 连续模式下，相邻 cut 状态八项逐字相等，Shot 2 起有同一瞬间承接句和五项 transitionPlan；连续 segment 的末态/首态相等，handoff 三项进入下一段 Shot 1 与声景。scene-change/time-jump 显式标记后允许断开
+9. 上游剧本启用状态链时，每切 `sourceState.before/after` 与认领节拍的计算前态/后态逐项相等；旧剧本没有状态链时明确跳过
 
 ## 时长约束链
 
-台词秒数（按剧本语速折算）≤ 分镜 `seconds` ≤ 5 秒；段 Σ分镜 ≤ 15 秒；集 Σ段 落在剧本 `targetSeconds` ±15%。全部由 validate 逐级对账。
+台词秒数（按剧本语速折算）≤ 分镜 `seconds` ≤ 5 秒；新 seed 的段 Σ分镜为 5–10 秒；集 Σ段 落在剧本 `targetSeconds` ±15%。全部由 validate 逐级对账。

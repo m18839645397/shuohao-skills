@@ -10,12 +10,13 @@ One line is held firmly though: **dialogue is structured data, not prose.**
 - **Per-episode time budget** — dialogue converts at reading speed (4.5 chars/sec by default), action at a fixed per-beat estimate (2.5s). Every episode must land within ±15% of target. **A three-minute episode is three minutes** — overruns are caught here, not in the generation pipeline
 - **Hook + cliffhanger** — on paper for every episode, and **the hook is the first beat, not a label**: `hookBeat` claims its concrete image, gated to the episode's first 3 beats (cold open); beats promised by the outline must be claimed by actual scenes
 - **Voice-over convention** — `VO` marks inner voice and narration, whose voice goes in the delivery note; the line book groups VO separately
+- **Dramatic state chain** — each scene stores one complete entry state and every action beat stores only a `statePatch`; deterministic before/after states keep positions, props and unfinished actions intact for storyboard generation
 
 Outputs `script.json`, a Markdown script, and a self-contained `script-report.html`:
 
 ![script-report.html](assets/report.webp)
 
-## Ten quality gates, all code
+## Eleven quality gates, all code
 
 Same stance as the other three skills in this repo: **a checklist the model grades itself on is worthless.**
 
@@ -28,6 +29,7 @@ Same stance as the other three skills in this repo: **a checklist the model grad
 | **Hook lands in the first 3 beats** | `hookBeat` claims where the hook's concrete image appears — the cold open is a gate, not a habit, so the hook and the actual opening can never drift apart |
 | **At least one action beat per scene** | a dialogue-only scene is radio drama — nothing for the picture to do |
 | Narrative action | no quoted dialogue inside action beats — lines only live in dialogue entries |
+| **Dramatic-state contract** | complete scene entry state; every action advances it with a non-empty `statePatch`; dialogue cannot mutate physical state; continuous scenes inherit the computed prior exit |
 | Beats claimed | every beat the outline pins to this episode must be claimed (checked with `--outline`; skipping is **announced**, never silent) |
 | Character refs | scene casts must exist in the outline (with `--outline`) |
 | Scene refs | scene exists, **lighting state is registered in the art bible**, props exist (with `--art`) |
@@ -57,7 +59,7 @@ novel-art        → art.json     (where + what's in their hands)
 novel-script     → script.json  (the drama: scenes, beats, lines)
 ```
 
-`seed <outline.json> --eps 1-3` deterministically prefills each episode's skeleton (target seconds, hook, cliff, claimed beats, candidate scenes and cast). `validate --outline --art` cross-checks characters, beats, and scenes/lighting/props — a lighting state the art bible never registered fails right here. `render --outline --art` displays names instead of raw IDs: **IDs in the data, names on screen.**
+`seed <outline.json> --eps 1-3` deterministically prefills each episode's skeleton and enables `continuityMode: "state-linked"`. `validate --outline --art` cross-checks characters, beats, scenes/lighting/props, and the dramatic-state contract. `render --outline --art` displays names instead of raw IDs: **IDs in the data, names on screen.**
 
 One layer down comes the storyboard skill: shot numbers, per-shot duration, first-frame prompts, generation batching.
 
@@ -86,8 +88,8 @@ The report UI defaults to Chinese; `--lang en` renders it fully in English.
 node scripts/selftest.mjs
 ```
 
-154 assertions — timing engine, stats, gate-defeating cases, seed, rendering (both UI languages), export. No model calls, runs in about a second.
+168 assertions — timing engine, dramatic-state reducer, all eleven gate-defeating cases, seed, rendering (both UI languages), export. No model calls, runs in about a second.
 
 The bundled example (`examples/渡口-script.json`) is a **complete 6-episode script** — 9 scenes, 123 lines, every episode inside the ±15% band, all gates passing against the outline and art fixtures.
 
-**Only tested on macOS + Node 24.**
+Full selftest verified on Windows with Node 22.19.0; Node 18 or newer is required.

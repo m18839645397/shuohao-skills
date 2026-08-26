@@ -5,7 +5,7 @@
 Storyboarding for AI short drama: turns novel-script's beat flow into a worklist you can hand straight to a video model. This is the first layer in the pipeline that talks directly to that model, and the premise is baked in: **shots are generated, so one more cut costs almost nothing** — and the short-drama attention span runs on ~3-second cuts. Hence a three-level structure:
 
 ```
-segment = one video-generation call, ≤ 15s, never crosses scenes
+segment = one video-generation call, new seeds default to 5–10s, never crosses scenes
  ├─ cuts × 3–5 = intra-segment edits, 2–5s each (hard gate), each claiming script beats
  ├─ frames    = one keyframe per cut: the master frame pinned at 0.00s,
  │              sub-frames pinned at their own cut marks
@@ -18,20 +18,21 @@ segment = one video-generation call, ≤ 15s, never crosses scenes
 - **Every cut carries an executable camera plan** — new seeds enable `cameraPlanMode: "cinematic-controlled"`: start position, pace/magnitude, target, focus, end composition, intent and transition are copied into that cut's own `[Shot k]`; static is the default and each cut gets one primary move
 - **Final prompts carry production-level detail** — `promptDetailMode: "production-rich"` requires environment, lighting, subject, action, effects and continuity per cut, plus four-layer soundscape and scored music style/instrumentation/arc/sync per segment
 - **Adjacent shots share one exact state boundary** — `continuityMode: "state-linked"` audits eight start/end state fields, five transition-plan bridges and continuous-segment handoffs; Shot 2 first continues the same instant before changing composition
+- **Inherit the drama before designing the camera** — when the script enables state linking, every cut copies its claimed first/last beat into `sourceState.before/after`; the twentieth gate blocks a storyboard that is internally consistent but not faithful to the script
 - **Frames are asset composition, not invention** — generation feeds the scene / character / prop sheets as references; with codex installed the frames are actually generated (optional)
 
 Outputs `storyboard.json`, a Markdown shot list, and a self-contained `storyboard-report.html`:
 
 ![storyboard-report.html](assets/report.webp)
 
-## Nineteen quality gates, all code
+## Twenty quality gates, all code
 
 Same stance as the other four skills in this repo: **a checklist the model grades itself on is worthless.**
 
 | Gate | Rule |
 | --- | --- |
 | **Full beat coverage** | every script beat claimed exactly once, in order, contiguous, cut-level |
-| Segment duration | 0 < Σcuts ≤ 15s (the single-generation cap; tune `params.maxSegmentSeconds`) |
+| Segment duration | new seeds use 5–10s; legacy JSON without a minimum keeps the default 15s cap |
 | **Cut duration** | every cut 2–5s — the ~3s rhythm is a **hard gate**, not advice |
 | Dialogue fits | dialogue seconds of claimed beats ≤ cut seconds, per cut |
 | Episode total | Σ segments within ±15% of the script's `targetSeconds` |
@@ -49,6 +50,7 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | No character names | frame prompts always; the H3 prompt only in English mode (Chinese prompts allow names — identity is anchored by the frames). Checked with `--outline` / `--cast`; skipping is **announced** |
 | Reference integrity | scene index / characters / props all audited against the script scene |
 | **Shot recipe** (optional mount) | only checked with `--shots <cards dir>`: a cut's `recipe` id exists in the library, every must-phrase of that card appears in the cut's frame prompt, and a multi-cut recipe runs long enough. Without `--shots` the skip is **announced**; so is "no cut references a recipe" |
+| **Script-state inheritance** | with a state-linked script, every cut's `sourceState.before/after` exactly matches the computed state of its first/last claimed beat |
 
 The selftest **defeats every gate on purpose** to prove each one actually blocks.
 
@@ -96,7 +98,7 @@ novel-script     → script.json     (the drama: scenes, beats, lines)
 novel-storyboard → storyboard.json (how to shoot: segments, cuts, frames, H3 prompts)
 ```
 
-`seed <script.json> --eps 1-3` deterministically expands each scene's beat list (numbers, per-beat seconds, speakers) as the cutting worksheet. `validate --script` is mandatory; `--outline` / `--cast` enable the name ban, `--art` gets scene names and sheet thumbnails into the report. Frame generation runs through codex `$imagegen` with the upstream sheets as `-i` references; the H3 prompt plus the frame set goes straight to MiniMax H3.
+`seed <script.json> --eps 1-3` deterministically expands beat numbers, seconds, speakers and `delivery`; state-linked scripts also carry per-beat `stateBefore/stateAfter`, while new boards receive the 5–10s segment range. `validate --script` is mandatory; `--outline` / `--cast` enable the name ban, `--art` gets scene names and sheet thumbnails into the report.
 
 ## CLI
 
@@ -104,7 +106,7 @@ novel-storyboard → storyboard.json (how to shoot: segments, cuts, frames, H3 p
 node scripts/novel-storyboard.mjs seed script.json --eps 1
 node scripts/novel-storyboard.mjs validate sb.json --script script.json --outline outline.json --cast cast.json
 node scripts/novel-storyboard.mjs checkup sb.json --script script.json
-node scripts/novel-storyboard.mjs validate sb.json --script script.json --shots /path/to/cards   # optional: the 19th gate
+node scripts/novel-storyboard.mjs validate sb.json --script script.json --shots /path/to/cards   # optional recipe gate
 node scripts/novel-storyboard.mjs render sb.json --html --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en --script script.json --outline outline.json --art art.json > storyboard-report.html   # English report UI
 node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-segment folders: f1..fN.png + prompt.md
@@ -124,8 +126,8 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-295 assertions — beat expansion, H3 skeleton derivation, controlled camera plans, production-rich visual/sound/music, cut-state chains and segment handoffs, stats and batching, gate-defeating cases, recipe-card parsing and mounting, seed, rendering, export. No model calls, runs in about a second.
+314 assertions — beat expansion, delivery and script-state inheritance, H3 skeletons, controlled camera plans, production-rich prompts, cut/segment state chains, all twenty gate-defeating cases, recipe cards, seed, rendering and export. No model calls, runs in about a second.
 
 The bundled example (`examples/渡口-storyboard.json`) is a complete episode-1 storyboard — 10 segments, 34 cuts claiming all 35 script beats at ~3.5s per cut, 119s against a 120s target, 2 generation batches, every segment carrying a fully audited H3 prompt.
 
-**Only tested on macOS + Node 24.**
+Full selftest verified on Windows with Node 22.19.0; Node 18 or newer is required.

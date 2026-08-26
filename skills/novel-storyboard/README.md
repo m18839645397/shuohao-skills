@@ -5,7 +5,7 @@
 给 AI 短剧出**分镜**：把 novel-script 的节拍流切成可以直接下单给视频模型的生成任务单。这是管线里第一个直接面对视频模型的层，前提刻在骨子里：**镜头是生成出来的，多切一刀的成本几乎为零**，短剧观众的注意力节奏是 3 秒左右一切。所以结构是三层：
 
 ```
-段（segment）＝ 一次视频生成调用，≤ 15 秒，不跨场次
+段（segment）＝ 一次视频生成调用，新 seed 默认 5–10 秒，不跨场次
  ├─ 分镜（cut）× 3–5 ＝ 段内剪切，每切 2–5 秒（硬门），各自认领剧本节拍
  ├─ 分镜图 ＝ 每切一张关键帧（<段号>/f1..fN.png）：主图钉 0.00 秒，子图钉各自切点
  └─ H3 提示词 ＝ 一段一条，多图对齐指令 + [Shot k] 切点时刻逐字对账
@@ -17,20 +17,21 @@
 - **每切有可执行的摄影计划** — 新 seed 默认开启 `cameraPlanMode: "cinematic-controlled"`：起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场逐字进入自己的 `[Shot k]`；固定镜头默认，一切只用一个主运镜
 - **最终提示词达到投产丰富度** — `promptDetailMode: "production-rich"` 要求逐切写空间、光线、主体、动作、效果、连续性，逐段写四层声景和配乐类型/配器/动态/同步点；不是靠字数堆形容词
 - **相邻镜头共享同一状态边界** — `continuityMode: "state-linked"` 对账每切八项 startState/endState、五项 transitionPlan 和连续段 handoff；Shot 2 起先承接同一瞬间再改变景别/机位
+- **先继承剧本，再设计摄影** — 上游剧本启用状态链时，每切 `sourceState.before/after` 精确复制认领首拍/末拍的计算状态；第 20 道门拦截“分镜内部自洽，但没有继承剧本”的假连续
 - **分镜图是资产合成，不是凭空画** — 出图挂场景/角色/道具设定图当参考图，novel-art 和 novel-characters 的图在这一步真正被消费。有 codex 就真出图（可选）
 
 产出 `storyboard.json` + Markdown + 一个双击就能开的 `storyboard-report.html`：
 
 ![storyboard-report.html](assets/report.webp)
 
-## 质量门：19 道，全是代码
+## 质量门：20 道，全是代码
 
 与仓库里另外四个 skill 同一主张：**checklist 交给模型自觉是靠不住的**。
 
 | 门 | 规则 |
 | --- | --- |
 | **节拍全覆盖** | 剧本每个节拍被恰好一个分镜认领、按顺序、连续、不跨场 |
-| 段时长 | 0 < Σ分镜 ≤ 15 秒（一次生成的上限，`params.maxSegmentSeconds` 按模型改） |
+| 段时长 | 新 seed 为 5–10 秒；旧 JSON 未写下限时继续只守默认 15 秒上限 |
 | **分镜时长** | 每切 2–5 秒——3 秒左右的短剧节奏是**硬门**不是建议 |
 | 台词装得下 | 认领节拍的台词秒数 ≤ 分镜秒数，逐切检查 |
 | 每集总时长 | Σ段 落在剧本 `targetSeconds` ±15% 内 |
@@ -48,6 +49,7 @@
 | 提示词不含角色名 | 分镜图提示词恒查；H3 提示词仅英文模式查（中文放行，身份靠分镜图锚定）。给 `--outline` / `--cast` 才查，不给**明说跳过** |
 | 引用对账 | 场次/人物/道具全部对账剧本该场 |
 | **镜头配方**（可选挂载） | 给了 `--shots <卡片目录>` 才查：cut 的 `recipe` id 在卡库里、卡片的每条必备短语出现在该切的分镜图提示词里、多格配方的连排格数够。不给 `--shots` **明说跳过**；给了但全篇没引用配方也明说 |
+| **剧本状态继承** | 上游剧本启用状态链时，每切 `sourceState.before/after` 必须精确等于所认领首拍/末拍的计算状态 |
 
 自测里每道门都有**击穿用例**——证明它真的会拦。
 
@@ -96,7 +98,7 @@ novel-script     → script.json     （戏：场次、节拍、台词）
 novel-storyboard → storyboard.json （怎么拍：段、分镜、分镜图、H3 提示词）
 ```
 
-- `seed <script.json> --eps 1-3` 确定性展开每场的节拍清单（编号、每拍秒数、说话人）当切镜底稿——**每拍几秒是算出来的，不让模型重新估**
+- `seed <script.json> --eps 1-3` 确定性展开每场节拍的编号、秒数、说话人、`delivery`；状态链剧本还带逐拍 `stateBefore/stateAfter`，并默认写入 5–10 秒段长
 - `validate --script` 是硬前提（分镜离开剧本没有意义）；`--outline` / `--cast` 查提示词人名，`--art` 让报告显示场景名并在批次单嵌设定图
 - 分镜图出图走 codex `$imagegen`，场景/角色/道具设定图当 `-i` 参考图；H3 提示词 + 整套分镜图直接下单给 MiniMax H3
 
@@ -108,7 +110,7 @@ node scripts/novel-storyboard.mjs validate sb.json \
      --script script.json --outline outline.json --cast cast.json
 node scripts/novel-storyboard.mjs checkup sb.json --script script.json
 node scripts/novel-storyboard.mjs validate sb.json --script script.json \
-     --shots /path/to/cards                                              # 可选：开第 19 道配方门
+     --shots /path/to/cards                                              # 可选：挂载配方门
 node scripts/novel-storyboard.mjs render sb.json --html \
      --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en \
@@ -132,7 +134,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 投
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / validate / checkup / render / export / slug
-  selftest.mjs           295 项断言，不调模型
+  selftest.mjs           314 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
@@ -154,6 +156,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-295 项断言，覆盖节拍展开 / H3 骨架推导 / 克制电影化运镜 / 投产级视觉声景与配乐 / 镜间状态链与段间 handoff / 统计与批次 / 质量门逐项击穿 / 配方卡库解析与挂载 / seed / 渲染（含中英界面）/ 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
+314 项断言，覆盖节拍展开 / delivery 与剧本状态继承 / H3 骨架 / 克制运镜 / 丰富提示词 / 镜间状态链与段间 handoff / 20 道门逐项击穿 / 配方卡库 / seed / 中英渲染 / 导出。不调模型、不花额度、1 秒跑完。
 
-**只在 macOS + Node 24 上实测过。** 代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但**没验过**。
+已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。

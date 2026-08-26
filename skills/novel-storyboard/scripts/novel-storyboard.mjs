@@ -24,6 +24,7 @@ import { fileURLToPath } from 'node:url';
  */
 
 export const DEFAULT_PARAMS = {
+  minSegmentSeconds: 0,  // 旧 JSON 兼容：0 表示只守上限；新 seed 会显式写 5 秒
   maxSegmentSeconds: 15, // 视频模型单段生成上限（秒）
   minCutSeconds: 2,      // 单个分镜下限
   maxCutSeconds: 5,      // 单个分镜上限——3 秒左右是短剧的呼吸
@@ -244,30 +245,93 @@ export function h3FieldValue(prompt, fieldIndex, lang = 'en') {
 
 const SCRIPT_DEFAULTS = { charsPerSecond: 4.5, actionSeconds: 2.5 };
 const lineChars = (line) => String(line ?? '').replace(/\s+/g, '').length;
+const sourcePlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value);
+const sourceClone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
+const stableSourceValue = (value) => {
+  if (Array.isArray(value)) return value.map(stableSourceValue);
+  if (!sourcePlainObject(value)) return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, stableSourceValue(value[key])]));
+};
+
+/** 比较从剧本复制来的剧情状态，忽略 JSON 属性顺序。 */
+export function sourceStateEqual(left, right) {
+  return JSON.stringify(stableSourceValue(left)) === JSON.stringify(stableSourceValue(right));
+}
+
+const sourceStateReady = (state) => sourcePlainObject(state)
+  && sourcePlainObject(state.characters)
+  && sourcePlainObject(state.props)
+  && typeof state.effectState === 'string'
+  && typeof state.unfinishedAction === 'string';
+
+function applySourceStatePatch(state, patch) {
+  const next = sourceClone(sourcePlainObject(state) ? state : {}) ?? {};
+  next.characters = sourcePlainObject(next.characters) ? next.characters : {};
+  next.props = sourcePlainObject(next.props) ? next.props : {};
+  if (!sourcePlainObject(patch)) return next;
+  if (sourcePlainObject(patch.characters)) {
+    for (const [id, delta] of Object.entries(patch.characters)) {
+      if (!sourcePlainObject(delta)) continue;
+      next.characters[id] = { ...(sourcePlainObject(next.characters[id]) ? next.characters[id] : {}), ...sourceClone(delta) };
+    }
+  }
+  if (sourcePlainObject(patch.props)) {
+    for (const [id, delta] of Object.entries(patch.props)) {
+      if (!sourcePlainObject(delta)) continue;
+      next.props[id] = { ...(sourcePlainObject(next.props[id]) ? next.props[id] : {}), ...sourceClone(delta) };
+    }
+  }
+  if (Object.hasOwn(patch, 'effectState')) next.effectState = patch.effectState;
+  if (Object.hasOwn(patch, 'unfinishedAction')) next.unfinishedAction = patch.unfinishedAction;
+  return next;
+}
+
+function sourceSceneTimeline(scene) {
+  let current = sourceClone(scene?.continuity?.entryState ?? {});
+  const beats = (scene?.flow ?? []).map((beat) => {
+    const stateBefore = sourceClone(current);
+    if (typeof beat?.action === 'string') current = applySourceStatePatch(current, beat.statePatch);
+    return { stateBefore, stateAfter: sourceClone(current) };
+  });
+  return { entryState: sourceClone(scene?.continuity?.entryState ?? {}), exitState: sourceClone(current), beats };
+}
 
 /** 把 script.json 展开成分镜要认领的节拍清单：ep → scenes → beats。 */
 export function expandScript(script) {
   const p = { ...SCRIPT_DEFAULTS, ...(script?.params ?? {}) };
+  const sourceStateRequired = script?.continuityMode === CONTINUITY_MODE;
   const eps = new Map();
   for (const ep of script?.episodes ?? []) {
-    const scenes = (ep?.scenes ?? []).map((sc, i) => ({
-      sceneIndex: i + 1,
-      sceneId: sc.sceneId,
-      lighting: sc.lighting ?? '',
-      characters: sc.characters ?? [],
-      props: sc.props ?? [],
-      beats: (sc.flow ?? []).map((b, j) => {
-        const isLine = typeof b?.line === 'string';
-        return {
-          n: j + 1,
-          kind: isLine ? 'line' : 'action',
-          seconds: r1(isLine ? lineChars(b.line) / p.charsPerSecond : p.actionSeconds),
-          speaker: isLine ? b.speaker : undefined,
-          delivery: isLine ? (b.delivery ?? '') : undefined,
-          text: isLine ? b.line : b.action,
-        };
-      }),
-    }));
+    const scenes = (ep?.scenes ?? []).map((sc, i) => {
+      const timeline = sourceStateRequired ? sourceSceneTimeline(sc) : null;
+      return {
+        sceneIndex: i + 1,
+        sceneId: sc.sceneId,
+        lighting: sc.lighting ?? '',
+        characters: sc.characters ?? [],
+        props: sc.props ?? [],
+        ...(timeline ? {
+          continuityKind: sc?.continuity?.kind ?? '',
+          entryState: timeline.entryState,
+          exitState: timeline.exitState,
+        } : {}),
+        beats: (sc.flow ?? []).map((b, j) => {
+          const isLine = typeof b?.line === 'string';
+          return {
+            n: j + 1,
+            kind: isLine ? 'line' : 'action',
+            seconds: r1(isLine ? lineChars(b.line) / p.charsPerSecond : p.actionSeconds),
+            speaker: isLine ? b.speaker : undefined,
+            delivery: isLine ? (b.delivery ?? '') : undefined,
+            text: isLine ? b.line : b.action,
+            ...(timeline ? {
+              stateBefore: timeline.beats[j]?.stateBefore,
+              stateAfter: timeline.beats[j]?.stateAfter,
+            } : {}),
+          };
+        }),
+      };
+    });
     eps.set(ep.ep, { ep: ep.ep, targetSeconds: ep.targetSeconds, scenes });
   }
   return eps;
@@ -487,7 +551,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], continuity: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], continuity: [], scriptState: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -533,6 +597,7 @@ export function gateReport(board, ctx = {}) {
     return ready;
   };
   const continuityRequired = board?.continuityMode === CONTINUITY_MODE;
+  const sourceStateRequired = script?.continuityMode === CONTINUITY_MODE;
   if (board?.continuityMode && !continuityRequired) {
     bad.continuity.push(`continuityMode「${board.continuityMode}」不支持，应为「${CONTINUITY_MODE}」`);
   }
@@ -586,7 +651,7 @@ export function gateReport(board, ctx = {}) {
       const cuts = seg?.cuts ?? [];
       const total = segSeconds(seg);
 
-      if (!(total > 0) || total > params.maxSegmentSeconds) {
+      if (!(total > 0) || total > params.maxSegmentSeconds || (params.minSegmentSeconds > 0 && total < params.minSegmentSeconds)) {
         bad.segCap.push(`${sid} 共 ${total} 秒`);
       }
 
@@ -869,6 +934,23 @@ export function gateReport(board, ctx = {}) {
           }
           const [from, to] = cut?.beats ?? [];
           if (Number.isInteger(from) && Number.isInteger(to) && from >= 1 && to <= scene.beats.length && from <= to) {
+            if (sourceStateRequired) {
+              const expectedBefore = scene.beats[from - 1]?.stateBefore;
+              const expectedAfter = scene.beats[to - 1]?.stateAfter;
+              const sourceState = cut?.sourceState;
+              if (!sourceStateReady(expectedBefore) || !sourceStateReady(expectedAfter)) {
+                bad.scriptState.push(`${cid} 认领的剧本节拍缺完整 stateBefore / stateAfter；先通过 novel-script 连续性门`);
+              } else if (!sourcePlainObject(sourceState) || !sourceStateReady(sourceState.before) || !sourceStateReady(sourceState.after)) {
+                bad.scriptState.push(`${cid} 缺 sourceState.before / sourceState.after`);
+              } else {
+                if (!sourceStateEqual(sourceState.before, expectedBefore)) {
+                  bad.scriptState.push(`${cid}.sourceState.before 没有继承认领首拍的 stateBefore`);
+                }
+                if (!sourceStateEqual(sourceState.after, expectedAfter)) {
+                  bad.scriptState.push(`${cid}.sourceState.after 没有继承认领末拍的 stateAfter`);
+                }
+              }
+            }
             let dlg = 0;
             for (const b of scene.beats.slice(from - 1, to)) {
               if (b.kind !== 'line') continue;
@@ -947,10 +1029,16 @@ export function gateReport(board, ctx = {}) {
   const SKIP_SCRIPT = '未提供 script.json，本门跳过（视为通过）';
   const SKIP_NAMES = '未提供 outline/cast，本门跳过（视为通过）';
   const SKIP_SHOTS = '未挂载配方卡库（--shots <卡片目录>），本门跳过（视为通过）';
+  const SKIP_SOURCE_STATE = script
+    ? `剧本未启用 continuityMode=${CONTINUITY_MODE}，跨层剧情状态检查跳过`
+    : SKIP_SCRIPT;
   const NO_RECIPE = '本批分镜没有引用配方';
 
   add('coverage', '剧本节拍被恰好一次、按顺序、连续认领（分镜级）', bad.coverage.length === 0, script ? bad.coverage.join('；') : SKIP_SCRIPT);
-  add('segment-cap', `每段 0 < 总秒数 ≤ ${params.maxSegmentSeconds}（一次生成的上限）`, eps.length > 0 && bad.segCap.length === 0, bad.segCap.join('；'));
+  const segmentRangeLabel = params.minSegmentSeconds > 0
+    ? `每段 ${params.minSegmentSeconds}–${params.maxSegmentSeconds} 秒（一次生成）`
+    : `每段 0 < 总秒数 ≤ ${params.maxSegmentSeconds}（一次生成的上限）`;
+  add('segment-cap', segmentRangeLabel, eps.length > 0 && bad.segCap.length === 0, bad.segCap.join('；'));
   add('cut-length', `每个分镜 ${params.minCutSeconds}–${params.maxCutSeconds} 秒——短剧的注意力节奏`, eps.length > 0 && bad.cutLen.length === 0, bad.cutLen.join('；'));
   add('dialogue-fit', '认领节拍的台词装得进分镜秒数', bad.fit.length === 0, script ? bad.fit.join('；') : SKIP_SCRIPT);
   add('ep-duration', `每集总时长在剧本目标 ±${Math.round(params.tolerance * 100)}% 内`, bad.duration.length === 0, script ? bad.duration.join('；') : SKIP_SCRIPT);
@@ -989,6 +1077,12 @@ export function gateReport(board, ctx = {}) {
     '引用的配方存在、必备短语进了分镜图提示词、多格配方连排够格数',
     bad.recipe.length === 0,
     recipes ? (bad.recipe.length ? bad.recipe.join('；') : recipeRefs ? '' : NO_RECIPE) : SKIP_SHOTS,
+  );
+  add(
+    'script-state-link',
+    '每切 sourceState 精确继承所认领剧本节拍的前态与后态',
+    bad.scriptState.length === 0,
+    bad.scriptState.length ? bad.scriptState.join('；') : sourceStateRequired ? '' : SKIP_SOURCE_STATE,
   );
 
   return gates;
@@ -1063,11 +1157,18 @@ export function seedFromScript(script, epRange = null) {
         lighting: sc.lighting,
         characters: sc.characters,
         props: sc.props,
+        ...(sc.continuityKind ? {
+          continuityKind: sc.continuityKind,
+          entryState: sc.entryState,
+          exitState: sc.exitState,
+        } : {}),
         beats: sc.beats.map((b) => ({
           n: b.n,
           kind: b.kind,
           seconds: b.seconds,
           ...(b.speaker ? { speaker: b.speaker } : {}),
+          ...(b.delivery ? { delivery: b.delivery } : {}),
+          ...(b.stateBefore ? { stateBefore: b.stateBefore, stateAfter: b.stateAfter } : {}),
           text: b.text,
         })),
       })),
@@ -1075,6 +1176,7 @@ export function seedFromScript(script, epRange = null) {
   }
   return {
     source: script?.source ?? '',
+    params: { minSegmentSeconds: 5, maxSegmentSeconds: 10 },
     cameraPlanMode: CAMERA_PLAN_MODE,
     promptDetailMode: PROMPT_DETAIL_MODE,
     continuityMode: CONTINUITY_MODE,
@@ -1151,7 +1253,7 @@ export function slug(name) {
  * 动态阈值由门自己算，映射里只写固定语义；未命中的 id 回落到原标签。 */
 const GATE_LABELS_EN = {
   'coverage': 'Every script beat claimed exactly once, in order, contiguous (cut level)',
-  'segment-cap': 'Each segment 0 < total ≤ {1}s (the single-generation cap)',
+  'segment-cap': 'Each segment {0}–{1}s (one generation call)',
   'cut-length': 'Every cut {0}–{1}s — the short-drama attention rhythm',
   'dialogue-fit': 'Dialogue of the claimed beats fits within the cut duration',
   'ep-duration': 'Episode total within ±{0}% of the script\'s target',
@@ -1169,6 +1271,7 @@ const GATE_LABELS_EN = {
   'prompt-no-names': 'English prompts carry no character names',
   'refs': 'Scenes / characters / props audited against the script',
   'shot-recipe': 'Referenced recipes exist, their must-phrases are in the frame prompt, multi-cut recipes run long enough',
+  'script-state-link': 'Every cut sourceState exactly inherits the before/after state of its claimed script beats',
 };
 const GATE_SKIPS_EN = {
     '未提供 outline.json，本门跳过（视为通过）': 'outline.json not provided — gate skipped (treated as passing)',
@@ -1181,6 +1284,7 @@ const GATE_SKIPS_EN = {
     [`未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`]: `cameraPlanMode=${CAMERA_PLAN_MODE} not enabled — execution-plan checks skipped`,
     [`未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`]: `promptDetailMode=${PROMPT_DETAIL_MODE} not enabled — richness checks skipped`,
     [`未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`]: `continuityMode=${CONTINUITY_MODE} not enabled — continuity checks skipped`,
+    [`剧本未启用 continuityMode=${CONTINUITY_MODE}，跨层剧情状态检查跳过`]: `script continuityMode=${CONTINUITY_MODE} not enabled — cross-layer script-state checks skipped`,
 };
 /** 报告里的门文案：英文界面取映射，未命中或中文界面回落原文。 */
 const gateText = (g, lang) => {
@@ -1255,7 +1359,7 @@ const I18N = {
     fmtMin: (sec) => `${Math.floor(sec / 60)} 分 ${Math.round(sec % 60)} 秒`,
     unitSeg: '段',
     unitCut: '切',
-    colophon: '分镜由模型依据剧本切分：段 = 一次生成（≤15 秒），分镜 = 段内 2–5 秒的剪切，每个分镜一张关键帧图。对齐指令、切点时刻、台词、提示词纪律全部由脚本确定性对账。分镜图出图走 codex，环境与角色设定图当参考图。',
+    colophon: '分镜由模型依据剧本切分：新 seed 的段 = 一次 5–10 秒生成，分镜 = 段内 2–5 秒的剪切，每个分镜一张关键帧图。剧本 sourceState、对齐指令、切点时刻、台词和提示词纪律全部由脚本确定性对账。',
   },
   en: {
     langCode: 'en',
@@ -1319,7 +1423,7 @@ const I18N = {
     fmtMin: (sec) => `${Math.floor(sec / 60)} min ${Math.round(sec % 60)} s`,
     unitSeg: 'seg',
     unitCut: 'cuts',
-    colophon: 'Cut by the model from the script: a segment = one generation call (≤15s), a cut = a 2–5s edit inside it, one keyframe per cut. Alignment lines, cut marks, dialogue and prompt discipline are all audited deterministically by the script. Frames are generated through codex with the scene and character sheets as references.',
+    colophon: 'Cut by the model from the script: new seeds use one 5–10s generation call per segment and 2–5s cuts with one keyframe each. Script sourceState, alignment lines, cut marks, dialogue and prompt discipline are audited deterministically.',
   },
 };
 

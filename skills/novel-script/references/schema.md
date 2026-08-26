@@ -5,12 +5,13 @@
 ```json
 {
   "source": "渡口",
+  "continuityMode": "state-linked",
   "params": { "charsPerSecond": 4.5, "actionSeconds": 2.5, "tolerance": 0.15, "maxLineChars": 35 },
   "episodes": [ ... ]
 }
 ```
 
-`params` 可省略，省略就用默认值。四个键都只在需要偏离默认时写。
+`params` 可省略，省略就用默认值。四个键都只在需要偏离默认时写。新 seed 默认写入 `continuityMode: "state-linked"`，开启剧情状态链；旧 JSON 没有该字段时保持兼容并明确跳过连续性门。
 
 ## episode
 
@@ -34,6 +35,7 @@
 | `lighting` | string | 该场用的光照状态名，必须是 art.json 里该场景登记过的状态。可省略 |
 | `characters` | string[] | 本场出场角色（`C01` 格式，对账 outline.json）。空镜给空数组 |
 | `props` | string[] | 本场用到的叙事道具（`P01` 格式，对账 art.json）。可省略 |
+| `continuity` | object | 剧情连续性：`kind` + 完整 `entryState`。出口状态由动作拍的 `statePatch` 归并计算，不重复存储。详见 `continuity-contract.md` |
 | `flow` | beat[] | 节拍流，**动作与台词交替**，按发生顺序 |
 
 ## beat（节拍）——二选一
@@ -41,7 +43,14 @@
 **动作节拍**：
 
 ```json
-{ "action": "沈知微一把按住箱盖。动作快得不像闺秀，倒像护崽的兽。" }
+{
+  "action": "沈知微一把按住箱盖。",
+  "statePatch": {
+    "characters": { "C01": { "pose": "右手按住箱盖", "gaze": "P01" } },
+    "props": { "P01": { "holder": "C01", "condition": "箱盖被按住" } },
+    "unfinishedAction": "C01 的右手仍压在 P01 上"
+  }
+}
 ```
 
 **台词节拍**：
@@ -53,11 +62,14 @@
 | 字段 | 说明 |
 | --- | --- |
 | `action` | 叙述体画面描述，一拍一件事。**不许出现引号台词**（「」『』“”都不行）——台词混进动作就没法计秒、没法喂 TTS |
+| `statePatch` | `state-linked` 模式下动作拍必填，只写本拍改变的人物/道具/效果/未完成动作字段；未写字段继承上一状态 |
 | `speaker` | 本场 `characters` 里的角色 id，或 `"VO"`（画外音/心声——谁的心声写进 delivery） |
 | `line` | 台词本体，口语，单句 ≤ 35 字（非空白字符计） |
 | `delivery` | 表演提示：语气、动作伴随、潜台词。可省略，建议都写 |
 
 一个节拍不能既有 `action` 又有 `line`；两者都没有也不行。
+
+台词拍不能带 `statePatch`。说话时发生物理动作，应拆成紧邻的动作拍；完整字段、归并规则和场间承接见 `continuity-contract.md`。
 
 ## 时长折算（确定性）
 

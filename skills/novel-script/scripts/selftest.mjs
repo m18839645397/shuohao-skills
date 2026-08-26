@@ -9,6 +9,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   DEFAULT_PARAMS,
+  SCRIPT_CONTINUITY_MODE,
+  applyScriptStatePatch,
   computeStats,
   gateReport,
   lineChars,
@@ -16,6 +18,8 @@ import {
   renderHtml,
   renderMarkdown,
   sceneSeconds,
+  scriptSceneTimeline,
+  scriptStateEqual,
   seedFromOutline,
   slug,
   validateScript,
@@ -39,6 +43,60 @@ function eq(actual, expected, label) {
 }
 const clone = (x) => structuredClone(x);
 const gate = (doc, id, ctx = {}) => gateReport(doc, ctx).find((g) => g.id === id);
+
+const dramaticEntryState = () => ({
+  characters: {
+    C01: { position: '供桌左侧', pose: '背向南门站立', gaze: '供桌', emotion: '克制饥饿' },
+    C02: { position: '南门外', pose: '抱着香烛奔跑', gaze: '供桌', emotion: '轻快' },
+  },
+  props: {
+    P01: { holder: 'C02', position: '怀中', condition: '整捆未拆' },
+  },
+  effectState: '香烟稀薄',
+  unfinishedAction: 'C02 正跨过门槛',
+});
+
+const continuityFixture = () => ({
+  source: '连续性契约测试',
+  continuityMode: SCRIPT_CONTINUITY_MODE,
+  episodes: [{
+    ep: 1,
+    targetSeconds: 8,
+    hook: '少年抱香烛冲进堂屋',
+    cliff: '祖父握紧白烛',
+    beatsClaimed: [],
+    hookBeat: [1, 1],
+    scenes: [{
+      sceneId: 'S01',
+      lighting: '清晨冷光',
+      characters: ['C01', 'C02'],
+      props: ['P01'],
+      continuity: { kind: 'episode-start', entryState: dramaticEntryState() },
+      flow: [
+        {
+          action: '少年跑到供桌右侧，把白烛递向祖父。',
+          statePatch: {
+            characters: { C02: { position: '供桌右侧', pose: '右手递出白烛', gaze: 'C01' } },
+            props: { P01: { position: '两人之间', condition: '尚未完全交接' } },
+            unfinishedAction: 'C01 与 C02 同时接触 P01',
+          },
+        },
+        { speaker: 'C01', line: '够吃。快去。', delivery: '压低声音，回答短促' },
+        {
+          action: '祖父接过白烛，少年收回右手。',
+          statePatch: {
+            characters: {
+              C01: { pose: '右手握紧白烛', gaze: 'P01', emotion: '压抑' },
+              C02: { pose: '右手收回胸前', gaze: 'C01', emotion: '不解' },
+            },
+            props: { P01: { holder: 'C01', position: '祖父右手', condition: '蜡面被握出凹痕' } },
+            unfinishedAction: '无',
+          },
+        },
+      ],
+    }],
+  }],
+});
 
 /* ---------------- 时长引擎 ---------------- */
 
@@ -89,7 +147,7 @@ ok(voEntry.lines[0].sceneId === 'S01', '台词条目带场景');
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带上游全部门通过');
 ok(gateReport(FIXTURE).every((g) => g.ok), '不带上游也全部通过（对账门跳过）');
-eq(gateReport(FIXTURE).length, 10, '十道门');
+eq(gateReport(FIXTURE).length, 11, '十一道门');
 
 /* ---------------- 质量门：逐门击穿 ---------------- */
 
@@ -185,6 +243,48 @@ eq(gateReport(FIXTURE).length, 10, '十道门');
   doc.episodes[0].scenes[0].flow.push({ action: '老周说「坐稳了」，随即撑篙。' });
   ok(!gate(doc, 'action-prose').ok, '动作里混台词引号被拦');
 }
+// continuity-contract — 剧本状态是分镜的上游事实，不允许靠文字临时猜
+{
+  const doc = continuityFixture();
+  ok(gate(doc, 'continuity-contract').ok, '完整入口状态与动作补丁通过');
+  const timeline = scriptSceneTimeline(doc.episodes[0].scenes[0]);
+  eq(timeline.beats.length, 3, '逐拍状态时间线完整');
+  ok(scriptStateEqual(timeline.beats[0].stateAfter, timeline.beats[1].stateBefore), '台词拍继承上一动作末态');
+  ok(scriptStateEqual(timeline.beats[1].stateBefore, timeline.beats[1].stateAfter), '台词拍不改变物理状态');
+  eq(timeline.exitState.props.P01.holder, 'C01', '动作补丁归并出最终道具持有人');
+}
+{
+  const state = applyScriptStatePatch(dramaticEntryState(), { characters: { C02: { position: '供桌右侧' } }, unfinishedAction: 'C02 正递出白烛' });
+  eq(state.characters.C02.position, '供桌右侧', '状态补丁只覆盖变化字段');
+  eq(state.characters.C02.pose, '抱着香烛奔跑', '未变化字段继续保留');
+}
+{
+  const doc = continuityFixture();
+  delete doc.episodes[0].scenes[0].flow[0].statePatch;
+  ok(!gate(doc, 'continuity-contract').ok, '动作拍缺 statePatch 被拦');
+}
+{
+  const doc = continuityFixture();
+  doc.episodes[0].scenes[0].flow[0].statePatch.characters.C99 = { position: '门外' };
+  ok(!gate(doc, 'continuity-contract').ok, '状态补丁引用场外角色被拦');
+}
+{
+  const doc = continuityFixture();
+  doc.episodes[0].scenes[0].flow[1].statePatch = { unfinishedAction: '说话时凭空换手' };
+  ok(!gate(doc, 'continuity-contract').ok, '台词拍偷偷改变物理状态被拦');
+}
+{
+  const doc = continuityFixture();
+  const first = doc.episodes[0].scenes[0];
+  const second = clone(first);
+  second.continuity = { kind: 'continuous', entryState: scriptSceneTimeline(first).exitState };
+  second.flow = [{ action: '少年重新转向南门。', statePatch: { characters: { C02: { pose: '转向南门', gaze: '南门' } }, unfinishedAction: 'C02 正转向南门' } }];
+  doc.episodes[0].scenes.push(second);
+  ok(gate(doc, 'continuity-contract').ok, '连续场次入口继承上一场计算末态时通过');
+  doc.episodes[0].scenes[1].continuity.entryState.props.P01.holder = 'C02';
+  ok(!gate(doc, 'continuity-contract').ok, '连续场次道具持有人跳变被拦');
+}
+ok(gate(FIXTURE, 'continuity-contract').ok && gate(FIXTURE, 'continuity-contract').detail.includes('跳过'), '旧剧本未启用状态链时兼容并明说跳过');
 // beats-claimed
 {
   const doc = clone(FIXTURE);
@@ -282,6 +382,7 @@ ok(validateScript(clone(FIXTURE)).length === 0, '不带上游校验也通过');
 
 const seeded = seedFromOutline(OUTLINE);
 eq(seeded.source, '渡口', 'seed 带书名');
+eq(seeded.continuityMode, SCRIPT_CONTINUITY_MODE, 'seed 默认开启剧本状态链');
 eq(seeded.episodes.length, 6, 'seed 全六集');
 eq(seeded.episodes[0].targetSeconds, 120, '目标秒数 = 每集分钟 × 60');
 eq(seeded.episodes[0].hook, OUTLINE.episodes[0].hook, '钩子从大纲搬');
@@ -327,7 +428,7 @@ ok(html.includes('分集剧本'), '02 分集剧本');
 ok(html.includes('场次总表'), '03 场次总表');
 ok(html.includes('台词本'), '04 台词本');
 ok(html.includes('质量门'), '05 质量门');
-ok(html.includes('✓ 质量门 10 / 10'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 11 / 11'), '页眉徽章全绿');
 ok(html.includes('class="band"'), '时长条带目标区间');
 ok(html.includes('导出 JSON'), '导出按钮在');
 ok(html.includes('id="script-data"'), '数据内嵌');
@@ -370,7 +471,7 @@ ok(html.includes('lang="zh"'), '默认报告 html lang 是 zh');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('lang="en"'), 'en 报告的 html lang 属性正确');
   ok(en.includes('Export JSON'), 'en 导出按钮标签');
-  ok(en.includes('Quality gates 10 / 10'), 'en 页眉徽章全绿');
+  ok(en.includes('Quality gates 11 / 11'), 'en 页眉徽章全绿');
   ok(en.includes('Line book'), 'en 台词本标题');
   ok(en.includes('Duration gauge'), 'en 时长仪表标题');
   ok(!en.includes('导出 JSON'), 'en 报告不含中文导出标签');
