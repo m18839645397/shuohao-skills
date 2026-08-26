@@ -11,6 +11,7 @@
   "source": "渡口",
   "cameraPlanMode": "cinematic-controlled",
   "promptDetailMode": "production-rich",
+  "framePlanMode": "adaptive-density",
   "continuityMode": "state-linked",
   "style": "realistic",
   "promptLang": "zh",
@@ -21,7 +22,7 @@
 
 `promptLang` 可省略（**默认 `en`——官方规范口径**）：整条英文、禁角色名，台词在 `<d>[Chinese]` 里保留原文。设成 `zh` 可切整条中文（对齐指令、字段名、镜头标记都有中文版，人名放行）——偏离官方推荐的备选项。`style` 可省略（默认 `realistic`），预设与角色/场景 skill 同名对齐（`realistic` / `cinematic` / `ghibli` / `inkwash`），对应的英文短语（如 `cinematic film still`）必须出现在**每条**分镜图提示词里——同一部剧的分镜图不许画风漂，门查。
 
-`seed` 默认写入 5–10 秒段长、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"` 与 `continuityMode: "state-linked"`。三种模式分别控制运镜执行、提示词丰富度和镜间/段间状态链；若上游 script.json 同样启用状态链，seed 还携带逐拍剧情状态。旧 storyboard.json 没有 `minSegmentSeconds` 时只守大于 0 和默认 15 秒上限；旧 script.json 没有状态模式时跨层门明确跳过。
+`seed` 默认写入 5–10 秒段长、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"` 与 `continuityMode: "state-linked"`。四种模式分别控制运镜执行、视频提示词丰富度、静态分镜图自适应密度和镜间/段间状态链；若上游 script.json 同样启用状态链，seed 还携带逐拍剧情状态。旧 storyboard.json 没有新模式字段时继续按旧规则校验并明确显示跳过。
 
 ## segment（段）
 
@@ -47,15 +48,16 @@
 | `cameraPlan` | object | 克制电影化执行计划：`pace`、`magnitude`、`start`、`target`、`end`、`focus`、`intent`；五个文本字段跟随 `promptLang`，是要逐字写进 H3 的 prompt-ready 原句 |
 | `transition` | enum | 本切如何从上一切进入：`straight-cut` / `cut-on-action` / `reaction-cut` / `match-cut` / `reveal-cut` |
 | `visualPlan` | object | 投产视觉计划：`environment` / `lighting` / `subject` / `action` / `effects` / `continuity`，跟随 promptLang，逐字进入本切 `[Shot k]` |
+| `framePlan` | object | 自适应分镜图计划：`role` / `density` / `keyMoment` / `composition` / `atmosphere` / `foreground[]` / `background[]` / `storyCues[]` / `exclude[]`。全部提示词文本使用英文；详见 `frame-density.md` |
 | `startState` / `endState` | object | 连续状态八项：location、subjectPosition、bodyPose、gaze、propState、lightState、effectState、screenDirection；相邻 cut 强制前末态 = 后首态 |
 | `transitionPlan` | object | Shot 2 起的动作桥：cutPoint、motionCarry、lightCarry、audioCarry、axisCarry；前四个视觉字段进入当前 Shot，audioCarry 进入声景 |
 | `characters` | string[] | 画内人物（C 编号），必须 ⊆ 剧本该场人物；空镜给空数组。> `maxOnScreen` 时必须带 `note` |
 | `props` | string[] | 画内道具（P 编号），必须 ⊆ 剧本该场道具。可省略 |
-| `frame` | string | **分镜图英文提示词**：这一格关键帧的样子。景别英文短语必须在里面；禁角色名 |
+| `frame` | string | **分镜图基础英文提示词**：保存景别、主体和统一风格短语；禁角色名。最终交给 imagegen 的完整提示词由脚本把它与 `framePlan`、参考图职责和连续性约束确定性组装 |
 | `recipe` | string | 镜头配方卡 id，可选。挂了 `--shots <卡片目录>` 才查（`shot-recipe` 门）。**cut 级不是 segment 级**——一段可以跨多种配方；**多格配方靠连续同 id 的分镜表达**，不是数组 |
 | `note` | string | 备注，可选 |
 
-`recipe` 是**可选挂载**：不给 `--shots` 就整门跳过。给了就查三条——id 在卡库里、卡片的每条 `must_phrases` 出现在该切的 `frame` 里（两边小写化后 `includes`）、卡片 `cuts` 下限 ≥ 2 时连续同 id 的分镜数不得低于该下限。卡片的**建议景别与运镜不设门**，只在报告里提示偏离：配方是语汇不是法条。
+`recipe` 是**可选挂载**：不给 `--shots` 就整门跳过。给了就查三条——id 在卡库里、卡片的每条 `must_phrases` 出现在该切组装后的完整 imagePrompt 里（两边小写化后 `includes`）、卡片 `cuts` 下限 ≥ 2 时连续同 id 的分镜数不得低于该下限。卡片的**建议景别与运镜不设门**，只在报告里提示偏离：配方是语汇不是法条。
 
 ## h3Prompt 的结构（多道门逐层对账）
 
@@ -82,8 +84,9 @@ non_diegetic_music: …（1–3 句，没有就 N/A）
 5. `<d>` 块之外的正文语言与 `promptLang` 一致（中文写成英文、英文混进中文都拦）；英文模式禁角色名，中文模式放行（身份靠分镜图锚定）
 6. 每个分镜的运镜词必须出现在自己的 `[Shot k]`；电影化模式下，动态运镜的速度/幅度、转场 token、`cameraPlan` 五个文本字段逐字对账，固定/动态参数匹配，并拦截英文提示词中同切出现多个主运镜
 7. 丰富模式下，`visualPlan` 六层逐字进入本切；`audioPlan.soundscape` 四层逐字进入 overall_soundscape；有配乐时 `audioPlan.music` 四层逐字进入 non_diegetic_music，无配乐明确 N/A/无。英文每项至少 24 字符，中文至少 10 字符
-8. 连续模式下，相邻 cut 状态八项逐字相等，Shot 2 起有同一瞬间承接句和五项 transitionPlan；连续 segment 的末态/首态相等，handoff 三项进入下一段 Shot 1 与声景。scene-change/time-jump 显式标记后允许断开
-9. 上游剧本启用状态链时，每切 `sourceState.before/after` 与认领节拍的计算前态/后态逐项相等；旧剧本没有状态链时明确跳过
+8. 自适应分镜图模式下，`framePlan` 按镜头功能使用 sparse/balanced/rich 的内容预算，字段与数量确定性校验；报告和 export 输出脚本组装后的完整 `imagePrompt`
+9. 连续模式下，相邻 cut 状态八项逐字相等，Shot 2 起有同一瞬间承接句和五项 transitionPlan；连续 segment 的末态/首态相等，handoff 三项进入下一段 Shot 1 与声景。scene-change/time-jump 显式标记后允许断开
+10. 上游剧本启用状态链时，每切 `sourceState.before/after` 与认领节拍的计算前态/后态逐项相等；旧剧本没有状态链时明确跳过
 
 ## 时长约束链
 

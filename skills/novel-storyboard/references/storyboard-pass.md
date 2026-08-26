@@ -13,11 +13,12 @@
 1. **认领是地基。** 每个分镜声明 `beats:[起,止]`，全场连续区间、不重不漏。切完在心里过一遍：每场第 1 拍到最后一拍都有主吗？
 2. **秒数是下单不是估算。** 分镜秒数直接决定切点时刻和对齐指令——改秒数必须同步改 `h3Prompt`，validate 逐字对账，改一边必被拦。
 3. **台词装得下。** 认领节拍的台词秒数 ≤ 分镜秒数。4.4 秒的台词就给 5 秒的切。
-4. **景别短语进分镜图提示词，完整运镜执行计划进自己的 [Shot k]。** 运镜直接用 H3 官方词表（Push In / Pan Left / Tracking Shot…）；按 `camera-direction.md` 填 `cameraPlan` 与 `transition`，速度/幅度和五个 prompt-ready 字段逐字进入自然句。
-5. **每切六层视觉、每段完整音频。** 按 `prompt-detail.md` 填 `visualPlan` 与 `audioPlan`；空间、光线、主体、动作、效果、连续性逐字进 Shot，声景和配乐各自进正确字段。
-6. **相邻镜头先对状态再写转场。** 按 `continuity.md` 填 startState/endState、transitionPlan 和段间 handoff；相邻 cut 末态必须等于首态，同场连续段也一样。
-7. **提示词禁角色名。** 分镜图和 H3 描述都用通用身份（an old ferryman、a young woman in a plain qipao），人名只许出现在 `<d>` 台词里。
-8. **先继承剧本状态，再设计摄影状态。** 上游节拍带 `stateBefore/stateAfter` 时，每切按认领区间原样复制到 `sourceState.before/after`。它是剧情事实；`startState/endState` 是它的摄影翻译，不能用“attention remains consistent”“all props remain arranged”这类模板句替代。
+4. **先定镜头功能和画面密度，再写分镜图。** 按 `frame-density.md` 填 `framePlan.role` 与 `density`：定场、复杂关系和动作高潮按需丰富；普通对话均衡；反应、停顿与道具特写保持克制。`frame` 只写基础构图，最终 imagePrompt 由脚本组装。
+5. **景别短语进分镜图基础提示词，完整运镜执行计划进自己的 [Shot k]。** 运镜直接用 H3 官方词表（Push In / Pan Left / Tracking Shot…）；按 `camera-direction.md` 填 `cameraPlan` 与 `transition`，速度/幅度和五个 prompt-ready 字段逐字进入自然句。
+6. **每切六层视频视觉、每段完整音频。** 按 `prompt-detail.md` 填 `visualPlan` 与 `audioPlan`；空间、光线、主体、动作、效果、连续性逐字进 Shot，声景和配乐各自进正确字段。
+7. **相邻镜头先对状态再写转场。** 按 `continuity.md` 填 startState/endState、transitionPlan 和段间 handoff；相邻 cut 末态必须等于首态，同场连续段也一样。
+8. **提示词禁角色名。** 分镜图和 H3 描述都用通用身份（an old ferryman、a young woman in a plain qipao），人名只许出现在 `<d>` 台词里。
+9. **先继承剧本状态，再设计摄影状态。** 上游节拍带 `stateBefore/stateAfter` 时，每切按认领区间原样复制到 `sourceState.before/after`。它是剧情事实；`startState/endState` 是它的摄影翻译，不能用“attention remains consistent”“all props remain arranged”这类模板句替代。
 
 ## 导演运镜手感（不设门，但决定像不像专业分镜）
 
@@ -31,6 +32,7 @@
 - **运镜克制。** 固定镜头是默认；推给情绪、拉给收场、跟给移动。一段里超过两种运镜就该问自己是不是在炫技。
 - **每切有头有尾。** `cameraPlan.start` 对齐分镜图，`target` 说镜头盯谁，`end` 给下一切留下连续状态，`focus` 管景深，`intent` 说明为什么这样拍；缺一项都不是可执行的摄影计划。
 - **按节拍自动调强度。** 普通对话固定或轻推；移动主体跟拍；重台词后反应切；关键动作在动作中切入；悬疑揭示缓推或焦点转移；爽点兑现可以加速但动作结束立即回稳。详见 `camera-direction.md`。
+- **画面密度也按节拍自动调强度。** 运镜强度和画面内容是两套预算：反应特写即使情绪很强也应该 sparse；新空间定场即使运镜固定也应该 rich。详见 `frame-density.md`。
 - **丰富但不写小说。** 视觉六层只写画面可见信息和本切能完成的动作；声景只写真实发生的声音；配乐强度跟剧情走，不是每段都史诗高潮。详见 `prompt-detail.md`。
 - **切点是同一瞬间。** 先确定上一切 endState，再原样复制为下一切 startState；构图可以跳，剧情状态不能跳。Shot 2 起用承接句和 transitionPlan，连续段用 handoff。详见 `continuity.md`。
 
@@ -59,7 +61,9 @@
 | 改切不读邻切 | 第 1 切改成岸路奔跑，第 2 切还写着栈桥才露出来，图却画在栈桥上 | 改一切连读前后切，分镜图和文字逐格对照——位置是连续状态 |
 | 运镜只有名字 | 只写 “camera follows” 或 “cinematic movement” | 填完整 cameraPlan：起点、速度/幅度、目标、焦点、终点、意图、转场 |
 | 运镜打架 | 同一切同时推、摇、环绕，或用否定句堆一串镜头词 | 一切一个主运镜；需要变化就拆切 |
-| 提示词过薄 | 只有景别、一个动作和运镜，场景人物像占位符 | 填 visualPlan 六层；按时长保留最能影响生成的具体信息 |
+| 分镜图过薄 | H3 的 visualPlan 很完整，实际图片仍只有景别和一个动作 | 填 framePlan；复制或 export 脚本组装的完整 imagePrompt，不要直接拿基础 frame 出图 |
+| 分镜图过满 | 反应特写也塞群众、摆件和多条线索 | reaction/insert 使用 sparse，靠光影、材质和留白提升质量，不靠物件数量 |
+| 视频提示词过薄 | 只有景别、一个动作和运镜，视频空间人物像占位符 | 填 visualPlan 六层；按时长保留最能影响生成的具体信息 |
 | 声音一条线 | 只有“环境声和配乐渐强”，没有同步事件和余韵 | 填 soundscape 基底/渐强/事件/余韵，配乐写类型/配器/曲线/同步点 |
 | 状态跳切 | 上一镜还背对窗户，下一镜已经转身或换手 | endState 必须逐项等于下一镜 startState |
 | 动作重启 | 下一镜从动作开头重新演，而不是接上一镜中段 | transitionPlan 写切点与 motionCarry，Shot 2 明写同一瞬间承接 |

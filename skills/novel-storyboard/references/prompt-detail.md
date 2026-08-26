@@ -1,6 +1,6 @@
 # 投产级丰富视频提示词
 
-本规则用于 `promptDetailMode: "production-rich"`。它解决的是“结构正确但内容太薄”：只有景别、动作和运镜，缺空间材质、光线、人物识别、动作过程、物理反馈、镜头连续性与声音动态。
+本规则用于 `promptDetailMode: "production-rich"`，只管 H3 **视频提示词**里的空间、动作过程和声音动态。静态分镜图怎样按剧情需要在克制、均衡和丰富之间自动选档，由 `frame-density.md` 的 `framePlanMode: "adaptive-density"` 单独负责；两层不要混用。
 
 丰富不等于堆形容词。每个字段只写视频模型能看见或听见、并能在本切时长内完成的内容。
 

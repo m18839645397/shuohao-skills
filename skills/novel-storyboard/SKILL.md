@@ -1,6 +1,6 @@
 ---
 name: novel-storyboard
-version: 1.9.0
+version: 1.10.0
 description: |
   给 AI 短剧出分镜：三层结构——段（新 seed 默认 5–10 秒，一次视频生成）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
@@ -8,12 +8,13 @@ description: |
   [Shot k] 切点时刻由分镜结构推导、逐字对账，台词逐字进 <d> 块（写法规范已内化为
   references/h3-prompt.md，不依赖外部 skill）；每切带克制电影化 cameraPlan，明确起点、目标、焦点、
   速度/幅度、结束构图、导演意图与转场；投产级丰富模式逐切写空间、光线、主体、动作、效果与连续性，
+  静态分镜图按镜头功能自动分配 sparse/balanced/rich 画面密度并确定性组装完整 imagePrompt，
   逐段写分层声景和配乐动态；状态链模式对账相邻镜头与连续段的人物位置、姿势、视线、道具、光效、
   银幕方向和动作/声音桥，避免硬切与状态重置。
   产出 storyboard.json + Markdown + 单页评审报告（分镜节奏带 / 分集分镜表 / 生成批次单 /
   配音对齐单，含导出 JSON）。分镜图出图拿场景与角色设定图当参考图走 codex $imagegen（可选）。
-  20 道质量门全部由脚本确定性检查（含剧本 sourceState 跨层继承；shot-recipe 可选挂载，不挂就明说跳过）；
-  export 一键导出 H3 投产包（每段提示词 + 按 Picture 序的分镜图清单）。零依赖、零 API key，用当前会话额度。
+  21 道质量门全部由脚本确定性检查（含分镜图自适应密度、剧本 sourceState 跨层继承；shot-recipe 可选挂载，不挂就明说跳过）；
+  export 一键导出 H3 提示词、逐切完整分镜图提示词和按 Picture 序的分镜图清单。零依赖、零 API key，用当前会话额度。
   Use when asked to 分镜、出分镜、镜头表、切镜、storyboard for AI short drama。
 allowed-tools:
   - Read
@@ -80,16 +81,18 @@ metadata:
 node {baseDir}/scripts/novel-storyboard.mjs seed <script.json> --eps 1-3 > <workdir>/storyboard.json
 ```
 
-确定性展开：每场节拍的编号、动作/台词、秒数、说话人和 `delivery` 进入 `seedScenes`；若剧本启用了状态链，每拍还带计算好的 `stateBefore` / `stateAfter`，场次带 `continuityKind`。顶层写入 `params.min/maxSegmentSeconds: 5/10`、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"` 和 `continuityMode: "state-linked"`。**秒数与剧情状态都不要让模型重新估。** segments 留空，切镜才是模型的活。
+确定性展开：每场节拍的编号、动作/台词、秒数、说话人和 `delivery` 进入 `seedScenes`；若剧本启用了状态链，每拍还带计算好的 `stateBefore` / `stateAfter`，场次带 `continuityKind`。顶层写入 `params.min/maxSegmentSeconds: 5/10`、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"` 和 `continuityMode: "state-linked"`。**秒数与剧情状态都不要让模型重新估。** segments 留空，切镜才是模型的活。
 
 ### Step 2 — 逐集分段切镜
 
 每集一份任务，能并发就并发。每份任务拿到：
 
-- `{baseDir}/references/storyboard-pass.md`、`{baseDir}/references/camera-direction.md`、`{baseDir}/references/prompt-detail.md`、`{baseDir}/references/continuity.md` 和 `{baseDir}/references/schema.md`（读它们，照着做）
+- `{baseDir}/references/storyboard-pass.md`、`{baseDir}/references/camera-direction.md`、`{baseDir}/references/prompt-detail.md`、`{baseDir}/references/frame-density.md`、`{baseDir}/references/continuity.md` 和 `{baseDir}/references/schema.md`（读它们，照着做）
 - 该集的 seedScenes 底稿 + 场景卡（art.json 的锚点与光照提示词）+ 角色卡（cast.json 的形象要点）
 
-流程：**先按剧情单元分段**（新 seed 每段 5–10 秒、不跨场），**段内切 2–5 秒的分镜**。每切先按认领区间原样复制首拍 `stateBefore` 和末拍 `stateAfter` 到 `sourceState.before/after`，再填 `cameraPlan` / `transition`、`visualPlan`、`startState` / `endState`；Shot 2 起填 `transitionPlan`，每段填 `audioPlan` / `handoff`。先对上剧本状态，再把上一切 endState 原样复制成下一切 startState。固定镜头是默认；动态镜头每切只给一个主运镜。
+流程：**先按剧情单元分段**（新 seed 每段 5–10 秒、不跨场），**段内切 2–5 秒的分镜**。每切先按认领区间原样复制首拍 `stateBefore` 和末拍 `stateAfter` 到 `sourceState.before/after`，再按节拍选择 `framePlan.role` 与 `density`，填 `cameraPlan` / `transition`、`visualPlan`、`framePlan`、`startState` / `endState`；Shot 2 起填 `transitionPlan`，每段填 `audioPlan` / `handoff`。先对上剧本状态，再把上一切 endState 原样复制成下一切 startState。固定镜头是默认；动态镜头每切只给一个主运镜。
+
+**画面密度不是剧情强度的同义词**：新空间定场和复杂关系用 rich；普通对话用 balanced；反应、停顿和手部/道具特写用 sparse。强烈情绪的脸部特写仍应克制，靠微表情、材质、光影和留白，而不是塞背景物件。最终出图不直接使用基础 `frame`，必须使用报告复制按钮或 export 生成的完整 imagePrompt。
 
 **每段写一条 `h3Prompt`**，照 `{baseDir}/references/h3-prompt.md` 写（官方方法论的内化版，**不依赖任何外部 skill**）。官方口径默认英文（`promptLang` 可切中文），**每个镜头独立一行**。Shot 2 起先写同一瞬间承接句和 transitionPlan，再改变景别/机位；连续段 Shot 1 先写段间承接句和 handoff。其余保持：对齐指令/切点时刻推导，台词逐字进 `<d>`，cameraPlan/visualPlan 逐字进自己的 Shot，audioPlan 进入声景与配乐字段。
 
@@ -103,11 +106,11 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
   [--shots </path/to/cards>]
 ```
 
-20 道质量门全是代码：除原有节拍、时长、人物、场景、提示词、运镜、丰富度、配方和镜内状态链外，`script-state-link` 逐切对账 `sourceState.before/after` 是否精确继承所认领剧本节拍的前态/后态。这样“分镜自己前后一致，但没有忠实继承剧本”的模板状态也不能通过。
+21 道质量门全是代码：除原有节拍、时长、人物、场景、提示词、运镜、视频丰富度、配方和镜内状态链外，`frame-density` 检查每切的镜头功能、内容预算和完整 imagePrompt，`script-state-link` 逐切对账 `sourceState.before/after` 是否精确继承所认领剧本节拍的前态/后态。
 
 **有违规逐条修，改完重跑，直到通过。**
 
-**`shot-recipe`（可选挂载）**：给了 `--shots` 才查，不给就明说跳过。cut 上可以写一个可选的 `recipe`（配方卡 id，**cut 级不是 segment 级**，**多格配方靠连续同 id 的分镜表达**，不是数组），门查三条——id 在卡库里、卡片的每条 `must_phrases` 出现在该切的 `frame` 里、卡片 `cuts` 下限 ≥ 2 时连续同 id 的分镜数不得低于该下限。
+**`shot-recipe`（可选挂载）**：给了 `--shots` 才查，不给就明说跳过。cut 上可以写一个可选的 `recipe`（配方卡 id，**cut 级不是 segment 级**，**多格配方靠连续同 id 的分镜表达**，不是数组），门查三条——id 在卡库里、卡片的每条 `must_phrases` 出现在该切组装后的完整 imagePrompt 里、卡片 `cuts` 下限 ≥ 2 时连续同 id 的分镜数不得低于该下限。
 
 ### Step 4 — 出分镜图（可选）
 
@@ -117,7 +120,7 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
 - **参考图是命根子**：`-i` 挂上该段场景设定图（该光照状态）+ 画内角色的设定图 + 涉及道具的设定图，提示词只负责取景和此刻的姿态
 - **链式参考也是硬要求**：f2 起额外挂本段 f1 + 立即上一切；连续段的下一段 f1 再挂上一段最后一帧。标准资产始终保留，防止链式漂移
 - 一格一次调用绝不批量；输出 `./<段号>/f<切序>.png`（f1 = 主分镜图，每段一个文件夹）
-- **默认先出第一段的整套分镜图给用户看效果**（3–5 张），确认画风和正反打构图再往后补——一集约 30–40 格，错了浪费的是整批
+- **默认先出三张代表图**：rich 定场/高潮、balanced 对话/移动、sparse 反应/特写各一张；三档信息量都正确再往后补
 - 单个失败跳过不阻断，最后汇总说明
 
 ### Step 5 — 输出与汇报
@@ -145,6 +148,8 @@ node {baseDir}/scripts/novel-storyboard.mjs render <剧名>-storyboard.json --ht
 └── E01-01/                        ← 一段一个文件夹 = 一次 H3 生成的全部材料
     ├── f1.png                     ← 主分镜图（有 codex 才有）
     ├── f2.png …                   ← 子分镜图
+    ├── f1.prompt.md               ← 主分镜图完整 imagePrompt
+    ├── f2.prompt.md …             ← 子分镜图完整 imagePrompt
     └── prompt.md                  ← H3 提示词（export 生成）
 ```
 
@@ -187,8 +192,8 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-314 项断言，不调模型、不花额度。20 道质量门每一道都有击穿用例。改完脚本先跑这个。
+338 项断言，不调模型、不花额度。21 道质量门每一道都有击穿用例。改完脚本先跑这个。
 
 ## 自带样例
 
-`{baseDir}/examples/渡口-storyboard.json`：《渡口》第 1 集完整分镜——10 段 34 切认领剧本全部 35 拍，平均 3.5 秒一切，共 119 秒 / 目标 120 秒，2 个生成批次，每段带完整的 H3 视频提示词（多图对齐 + 切点时刻全部对账通过）。当质量基准，也是自测夹具。
+`{baseDir}/examples/渡口-storyboard.json`：《渡口》第 1 集完整旧版兼容夹具——10 段 34 切认领剧本全部 35 拍，用来守节拍、对齐、配方和旧 JSON 兼容。新 seed 的自适应分镜图结构以 `references/frame-density.md` 的 sparse/balanced/rich 三档示例及自测夹具为准。

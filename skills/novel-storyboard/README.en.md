@@ -17,15 +17,16 @@ segment = one video-generation call, new seeds default to 5–10s, never crosses
 - **Prompts follow the official spec: English by default, one shot per line** — each shot on its own line with its cut time; dialogue, lyrics and on-screen text keep their original language per the official rules (`<d>[Chinese] …</d>` verbatim). `promptLang: 'zh'` switches the whole prompt to Chinese. The writing spec is internalized as `references/h3-prompt.md` — **this skill is self-contained and depends on no external skill**
 - **Every cut carries an executable camera plan** — new seeds enable `cameraPlanMode: "cinematic-controlled"`: start position, pace/magnitude, target, focus, end composition, intent and transition are copied into that cut's own `[Shot k]`; static is the default and each cut gets one primary move
 - **Final prompts carry production-level detail** — `promptDetailMode: "production-rich"` requires environment, lighting, subject, action, effects and continuity per cut, plus four-layer soundscape and scored music style/instrumentation/arc/sync per segment
+- **Storyboard frames receive role-driven visual density** — `framePlanMode: "adaptive-density"` selects sparse / balanced / rich by shot function; reports and export deterministically compile the full image prompt instead of sending the thin base `frame` to the image model
 - **Adjacent shots share one exact state boundary** — `continuityMode: "state-linked"` audits eight start/end state fields, five transition-plan bridges and continuous-segment handoffs; Shot 2 first continues the same instant before changing composition
-- **Inherit the drama before designing the camera** — when the script enables state linking, every cut copies its claimed first/last beat into `sourceState.before/after`; the twentieth gate blocks a storyboard that is internally consistent but not faithful to the script
+- **Inherit the drama before designing the camera** — when the script enables state linking, every cut copies its claimed first/last beat into `sourceState.before/after`; the cross-layer gate blocks a storyboard that is internally consistent but not faithful to the script
 - **Frames are asset composition, not invention** — generation feeds the scene / character / prop sheets as references; with codex installed the frames are actually generated (optional)
 
 Outputs `storyboard.json`, a Markdown shot list, and a self-contained `storyboard-report.html`:
 
 ![storyboard-report.html](assets/report.webp)
 
-## Twenty quality gates, all code
+## Twenty-one quality gates, all code
 
 Same stance as the other four skills in this repo: **a checklist the model grades itself on is worthless.**
 
@@ -44,12 +45,13 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | **H3 dialogue verbatim** | every claimed line appears verbatim inside a `<d>` block — one changed punctuation mark fails |
 | **Prompt language consistency** | prose audited both ways against `promptLang`: Chinese drama written in English fails, English mode mixing Chinese fails |
 | **Production prompt richness** | six visual-plan layers per cut, four soundscape layers per segment and four scored-music layers appear verbatim in the correct H3 fields with language-aware minimum detail; no music is explicit N/A/无 |
+| **Adaptive frame density** | `framePlan` assigns sparse / balanced / rich content budgets by establishing / dialogue / reaction / action / reveal / insert / atmosphere role; structured counts, sensible role pairings and the compiled image prompt are audited deterministically |
 | **Cut and segment continuity** | eight end/start state fields match across adjacent cuts; cut point, motion, light, audio and axis bridges enter the right fields; continuous segments audit state and handoff while explicit scene/time jumps may break it |
 | **Style phrase** | the `style` preset's English phrase (realistic / cinematic / ghibli / inkwash, name-aligned with the character and art skills) must appear in every frame prompt — one drama, one look |
 | Frame-prompt hygiene | English-only, non-empty |
 | No character names | frame prompts always; the H3 prompt only in English mode (Chinese prompts allow names — identity is anchored by the frames). Checked with `--outline` / `--cast`; skipping is **announced** |
 | Reference integrity | scene index / characters / props all audited against the script scene |
-| **Shot recipe** (optional mount) | only checked with `--shots <cards dir>`: a cut's `recipe` id exists in the library, every must-phrase of that card appears in the cut's frame prompt, and a multi-cut recipe runs long enough. Without `--shots` the skip is **announced**; so is "no cut references a recipe" |
+| **Shot recipe** (optional mount) | only checked with `--shots <cards dir>`: a cut's `recipe` id exists in the library, every must-phrase of that card appears in the compiled image prompt, and a multi-cut recipe runs long enough. Without `--shots` the skip is **announced**; so is "no cut references a recipe" |
 | **Script-state inheritance** | with a state-linked script, every cut's `sourceState.before/after` exactly matches the computed state of its first/last claimed beat |
 
 The selftest **defeats every gate on purpose** to prove each one actually blocks.
@@ -109,7 +111,7 @@ node scripts/novel-storyboard.mjs checkup sb.json --script script.json
 node scripts/novel-storyboard.mjs validate sb.json --script script.json --shots /path/to/cards   # optional recipe gate
 node scripts/novel-storyboard.mjs render sb.json --html --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en --script script.json --outline outline.json --art art.json > storyboard-report.html   # English report UI
-node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-segment folders: f1..fN.png + prompt.md
+node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-segment folders: f1..fN.png + f1..fN.prompt.md + H3 prompt.md
 ```
 
 ## Limits
@@ -118,7 +120,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 - Lip-sync is out of scope for now — that belongs to the generation pipeline
 - Seconds are a **generation order, not an estimate**; tune the segment cap and cut-rhythm range in `params` per your model
 - Report UI ships in Chinese (default) and English — pick with `--lang`; the prompt language is controlled separately by `promptLang` (English by default)
-- Generate the first segment's full frame set (3–5 images) for approval before committing — one episode is ~30–40 frames, and a wrong art direction wastes the batch
+- Generate one representative rich, balanced and sparse frame for approval before committing — one episode is ~30–40 frames, and a wrong density strategy wastes the batch
 
 ## Selftest
 
@@ -126,8 +128,8 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-314 assertions — beat expansion, delivery and script-state inheritance, H3 skeletons, controlled camera plans, production-rich prompts, cut/segment state chains, all twenty gate-defeating cases, recipe cards, seed, rendering and export. No model calls, runs in about a second.
+338 assertions — beat expansion, delivery and script-state inheritance, H3 skeletons, controlled camera plans, production-rich video prompts, adaptive frame density, cut/segment state chains, all twenty-one gate-defeating cases, recipe cards, seed, rendering and export. No model calls, runs in about a second.
 
-The bundled example (`examples/渡口-storyboard.json`) is a complete episode-1 storyboard — 10 segments, 34 cuts claiming all 35 script beats at ~3.5s per cut, 119s against a 120s target, 2 generation batches, every segment carrying a fully audited H3 prompt.
+The bundled `examples/渡口-storyboard.json` remains the complete legacy-compatibility fixture for rhythm, alignment and recipes. New adaptive frame structure is demonstrated in `references/frame-density.md` and exercised by the selftest fixtures.
 
 Full selftest verified on Windows with Node 22.19.0; Node 18 or newer is required.

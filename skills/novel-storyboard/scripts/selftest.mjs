@@ -17,6 +17,11 @@ import {
   CONTINUITY_TOKENS,
   DEFAULT_PARAMS,
   DEFAULT_STYLE,
+  FRAME_DENSITIES,
+  FRAME_PLAN_ARRAY_FIELDS,
+  FRAME_PLAN_MODE,
+  FRAME_PLAN_TEXT_FIELDS,
+  FRAME_ROLES,
   MUSIC_PLAN_FIELDS,
   HANDOFF_KINDS,
   PROMPT_DETAIL_MODE,
@@ -25,6 +30,7 @@ import {
   TRANSITION_TOKENS,
   TRANSITION_PLAN_FIELDS,
   VISUAL_PLAN_FIELDS,
+  buildFrameImagePrompt,
   exportPack,
   H3_I2VA_LINE,
   SHOT_SIZES,
@@ -139,6 +145,26 @@ const richPromptDoc = () => {
     `[Shot 1] A straight cut enters <Picture 1>. ${plan.start}. ${visual.environment}. ${visual.lighting}. ${visual.subject}. ${visual.action}. Use a slow, subtle Tracking Shot centred on ${plan.target}. ${plan.focus}. ${visual.effects}. End with ${plan.end}. ${visual.continuity}. The intent is to ${plan.intent}.\n\n` +
     `overall_soundscape: ${soundscape.baseline}. ${soundscape.build}. ${soundscape.events}. ${soundscape.aftermath}.\n\n` +
     `non_diegetic_music: ${music.style}. ${music.instrumentation}. ${music.arc}. ${music.sync}.`;
+  return doc;
+};
+
+const adaptiveFrameDoc = (density = 'balanced', role = 'dialogue') => {
+  const doc = cameraPlanDoc();
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  doc.framePlanMode = FRAME_PLAN_MODE;
+  cut.framePlan = {
+    role,
+    density,
+    keyMoment: 'The woman is caught mid-stride with the suitcase locked tightly against her chest',
+    composition: 'She occupies the right third while the wet path and fog preserve a clear direction of travel',
+    atmosphere: 'Fine fog softens the distance while one restrained puddle splash records her physical momentum',
+    foreground: density === 'rich' ? ['Wet reeds cross the lower-left edge as a controlled depth cue'] : [],
+    background: density === 'sparse' ? [] : ['The muddy path narrows into dense dawn fog behind the subject'],
+    storyCues: density === 'rich'
+      ? ['The suitcase remains pressed protectively against her chest', 'Her path disappears before revealing the destination']
+      : ['The suitcase remains pressed protectively against her chest'],
+    exclude: ['extra travellers or invented roadside structures'],
+  };
   return doc;
 };
 
@@ -344,7 +370,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 20, '二十道门');
+eq(gateReport(FIXTURE, CTX).length, 21, '二十一道门');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -719,6 +745,63 @@ eq(h3Remainder('a <d>[Chinese] 你好</d> b "营业中" c'), 'a   b   c', 'h3Rem
   ok(gate(doc, 'prompt-detail', {}).ok, '明确无配乐时 N/A 通过');
 }
 
+// frame-density — 镜头功能决定 sparse / balanced / rich 内容预算，最终提示词确定性组装
+{
+  for (const density of FRAME_DENSITIES) {
+    const doc = adaptiveFrameDoc(density);
+    ok(gate(doc, 'frame-density', {}).ok, `${density} 画面密度结构完整时通过`);
+  }
+  eq(FRAME_ROLES.length, 7, '分镜图功能枚举覆盖定场、对话、反应、动作、揭示、插入与气氛');
+  eq(FRAME_PLAN_TEXT_FIELDS.length, 3, 'framePlan 三个提示词文本字段');
+  eq(FRAME_PLAN_ARRAY_FIELDS.length, 4, 'framePlan 四个可计数内容数组');
+}
+{
+  const doc = adaptiveFrameDoc('rich');
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  const prompt = buildFrameImagePrompt(cut);
+  ok(prompt.includes(cut.framePlan.keyMoment), '完整 imagePrompt 吃到关键帧瞬间');
+  ok(prompt.includes(cut.framePlan.foreground[0]) && prompt.includes(cut.framePlan.background[0]), 'rich imagePrompt 吃到前后景');
+  ok(prompt.includes(cut.framePlan.storyCues[1]), 'rich imagePrompt 吃到叙事线索');
+  ok(prompt.includes('No text, no watermark, no borders'), '完整 imagePrompt 固定禁文字水印边框');
+}
+{
+  const doc = adaptiveFrameDoc('rich');
+  delete doc.episodes[0].segments[0].cuts[0].framePlan.background;
+  ok(!gate(doc, 'frame-density', {}).ok, 'rich 缺背景层被拦');
+}
+{
+  const doc = adaptiveFrameDoc('sparse');
+  const plan = doc.episodes[0].segments[0].cuts[0].framePlan;
+  plan.foreground = ['A foreground reed', 'A foreground rope'];
+  plan.background = ['A background crowd'];
+  ok(!gate(doc, 'frame-density', {}).ok, 'sparse 堆入超过两项前后景元素被拦');
+}
+{
+  const doc = adaptiveFrameDoc('rich', 'reaction');
+  ok(!gate(doc, 'frame-density', {}).ok, 'reaction 使用 rich 被拦，避免背景抢情绪');
+}
+{
+  const doc = adaptiveFrameDoc('rich', 'establishing');
+  doc.episodes[0].segments[0].cuts[0].size = 'wide';
+  doc.episodes[0].segments[0].cuts[0].frame = 'wide shot of a foggy riverside path, cinematic film still, 16:9';
+  ok(gate(doc, 'frame-density', {}).ok, 'establishing 使用 wide + rich 时通过');
+  doc.episodes[0].segments[0].cuts[0].framePlan.density = 'balanced';
+  ok(!gate(doc, 'frame-density', {}).ok, 'establishing 降成 balanced 被拦');
+}
+{
+  const doc = adaptiveFrameDoc('sparse', 'insert');
+  doc.episodes[0].segments[0].cuts[0].size = 'close';
+  doc.episodes[0].segments[0].cuts[0].frame = 'close-up of a weathered suitcase clasp, cinematic film still, 16:9';
+  ok(gate(doc, 'frame-density', {}).ok, 'insert 使用 close + sparse 时通过');
+}
+{
+  const doc = adaptiveFrameDoc();
+  doc.episodes[0].segments[0].cuts[0].framePlan.keyMoment = '太短而且是中文';
+  const g = gate(doc, 'frame-density', {});
+  ok(!g.ok && g.detail.includes('必须使用英文'), 'framePlan 文本混中文被拦');
+}
+ok(gate(FIXTURE, 'frame-density', CTX).ok && gate(FIXTURE, 'frame-density', CTX).detail.includes('跳过'), '旧 storyboard 没有 framePlanMode 时兼容并明说跳过');
+
 // style-phrase — 同剧分镜图画风不许漂
 {
   eq(DEFAULT_STYLE, 'realistic', '默认半写实');
@@ -928,8 +1011,9 @@ eq(GATE_LOG, '.gates.jsonl', '日志文件名固定');
 
 {
   const pack = exportPack(FIXTURE, SCRIPT, { imageExists: () => false });
-  eq(pack.files.length, 11, '十段 prompt.md + 一份 manifest');
+  eq(pack.files.length, 45, '十段 H3 prompt.md + 三十四份完整分镜图提示词 + 一份 manifest');
   ok(pack.files.some((f) => f.path === 'E01-01/prompt.md'), '每段一个文件夹里的 prompt.md');
+  ok(pack.files.some((f) => f.path === 'E01-01/f1.prompt.md'), '每切导出一份完整分镜图提示词');
   const p01 = pack.files.find((f) => f.path === 'E01-01/prompt.md');
   ok(p01.content.startsWith('# E01-01 · H3 提示词'), 'prompt.md 带标题');
   ok(p01.content.includes('Picture 1 = f1.png（**首帧**，钉 0.00 秒）'), '明确指定哪个文件是首帧');
@@ -939,6 +1023,7 @@ eq(GATE_LOG, '.gates.jsonl', '日志文件名固定');
   const m = pack.manifest.find((x) => x.segment === 'E01-01');
   eq(m.pictures.join(','), 'E01-01/f1.png,E01-01/f2.png,E01-01/f3.png,E01-01/f4.png', 'Picture 序 = 文件夹里的 f1..fn');
   eq(m.cutStarts.join(','), '0,3,6,10', 'manifest 带切点时刻表');
+  eq(m.imagePrompts.join(','), 'E01-01/f1.prompt.md,E01-01/f2.prompt.md,E01-01/f3.prompt.md,E01-01/f4.prompt.md', 'manifest 带每切完整分镜图提示词路径');
   eq(m.missing.length, 4, '缺图逐张标注');
   ok(pack.missingTotal > 0, '缺图总数上报');
 }
@@ -982,6 +1067,7 @@ const seeded = seedFromScript(SCRIPT);
 eq(seeded.source, '渡口', 'seed 带剧名');
 eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
 eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
+eq(seeded.framePlanMode, FRAME_PLAN_MODE, 'seed 默认开启分镜图自适应画面密度');
 eq(seeded.continuityMode, CONTINUITY_MODE, 'seed 默认开启状态链连续性');
 eq(seeded.params.minSegmentSeconds, 5, '新 seed 默认每段至少 5 秒');
 eq(seeded.params.maxSegmentSeconds, 10, '新 seed 默认每段最多 10 秒');
@@ -1031,7 +1117,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 20 / 20'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 21 / 21'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
 ok(html.includes('主分镜图 · #1 未生成'), '主分镜图缺图时显示占位不装有');
@@ -1051,7 +1137,7 @@ ok(html.includes('class="duo"'), '分镜列表与提示词面板五五分栏');
 ok(html.includes('static shot'), '英文提示词正文进面板');
 ok(html.includes('integrated_multimodal_description'), '官方骨架字段进面板');
 ok(html.includes('[Shot 2] At'), '逐镜换行的结构化正文进面板');
-ok(html.includes('分镜图提示词'), '每个分镜带分镜图提示词复制按钮');
+ok(html.includes('完整分镜图提示词'), '每个分镜带完整分镜图提示词复制按钮');
 ok(html.includes('id="lightbox"'), '点图放大');
 ok(html.includes('渡口-storyboard.json'), '导出文件名');
 ok(html.includes('批次 01'), '批次卡编号');
@@ -1061,6 +1147,14 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const cameraHtml = renderHtml(cameraPlanDoc(), {});
   ok(cameraHtml.includes('class="cplan"'), 'html 展示运镜执行计划块');
   ok(cameraHtml.includes('waist-high rear medium shot'), 'html 运镜执行计划包含起始机位');
+}
+{
+  const doc = adaptiveFrameDoc('rich');
+  const frameHtml = renderHtml(doc, {});
+  const prompt = buildFrameImagePrompt(doc.episodes[0].segments[0].cuts[0]);
+  ok(frameHtml.includes('class="fplan"'), 'html 展示镜头功能与画面密度块');
+  ok(frameHtml.includes('reeds cross the lower-left edge'), 'html 缺图占位展示完整 imagePrompt 的丰富前景');
+  ok(frameHtml.includes(`data-copy="${prompt.replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')}"`), 'html 复制按钮使用完整 imagePrompt');
 }
 {
   const withImg = renderHtml(FIXTURE, { ...CTX, imageExists: () => true });
@@ -1096,7 +1190,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 20 / 20'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 21 / 21'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
   ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');

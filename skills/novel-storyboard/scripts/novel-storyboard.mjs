@@ -79,6 +79,12 @@ export const PROMPT_DETAIL_MODE = 'production-rich';
 export const VISUAL_PLAN_FIELDS = ['environment', 'lighting', 'subject', 'action', 'effects', 'continuity'];
 export const SOUND_PLAN_FIELDS = ['baseline', 'build', 'events', 'aftermath'];
 export const MUSIC_PLAN_FIELDS = ['style', 'instrumentation', 'arc', 'sync'];
+/** 分镜图自适应密度：镜头功能决定内容预算，最终 imagePrompt 由脚本确定性组装。 */
+export const FRAME_PLAN_MODE = 'adaptive-density';
+export const FRAME_ROLES = ['establishing', 'dialogue', 'reaction', 'action', 'reveal', 'insert', 'atmosphere'];
+export const FRAME_DENSITIES = ['sparse', 'balanced', 'rich'];
+export const FRAME_PLAN_TEXT_FIELDS = ['keyMoment', 'composition', 'atmosphere'];
+export const FRAME_PLAN_ARRAY_FIELDS = ['foreground', 'background', 'storyCues', 'exclude'];
 /** 镜头连续性：状态链 + 切内动作桥 + 段间交接；新 seed 默认开启。 */
 export const CONTINUITY_MODE = 'state-linked';
 export const CONTINUITY_STATE_FIELDS = [
@@ -114,6 +120,55 @@ const CAMERA_MAGNITUDE_TOKENS = {
   zh: { subtle: '轻微', moderate: '中等', large: '大幅' },
 };
 const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
+
+const FRAME_DENSITY_INSTRUCTIONS = {
+  sparse: 'Keep the image intentionally restrained with one dominant focal point, controlled negative space and no decorative clutter.',
+  balanced: 'Keep a balanced narrative composition with a clear subject plane, one supporting spatial layer and one legible story cue.',
+  rich: 'Build a narratively dense but controlled composition with legible foreground, subject plane and background; every detail must support the beat.',
+};
+
+/**
+ * 单切结构化 framePlan → 真正交给 imagegen 的完整英文提示词。
+ * 旧 JSON 没有 framePlan 时原样返回 cut.frame，保证兼容；新模式由质量门保证结构完整。
+ */
+export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = false } = {}) {
+  const base = String(cut?.frame ?? '').trim();
+  const plan = cut?.framePlan;
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return base;
+
+  const list = (field) => Array.isArray(plan[field])
+    ? plan[field].filter(hasText).map((x) => String(x).trim())
+    : [];
+  const lines = [
+    'Treat the attached environment reference as the exact location, material and lighting standard.',
+  ];
+  if ((cut?.characters ?? []).length) {
+    lines.push('Match every on-screen subject exactly to the attached character reference images.');
+  }
+  if ((cut?.props ?? []).length) {
+    lines.push('Match every narrative prop exactly to the attached prop reference images.');
+  }
+  lines.push(FRAME_DENSITY_INSTRUCTIONS[plan.density] ?? 'Keep the composition narratively clear and controlled.');
+  if (base) lines.push(base);
+  if (hasText(plan.keyMoment)) lines.push(`Keyframe moment: ${plan.keyMoment.trim()}.`);
+  if (hasText(plan.composition)) lines.push(`Composition: ${plan.composition.trim()}.`);
+  const foreground = list('foreground');
+  const background = list('background');
+  const storyCues = list('storyCues');
+  const exclude = list('exclude');
+  if (foreground.length) lines.push(`Foreground: ${foreground.join('; ')}.`);
+  if (background.length) lines.push(`Background: ${background.join('; ')}.`);
+  if (storyCues.length) lines.push(`Narrative cues that must remain legible: ${storyCues.join('; ')}.`);
+  if (hasText(plan.atmosphere)) lines.push(`Visible atmosphere and physical feedback: ${plan.atmosphere.trim()}.`);
+  if (cutIndex > 0) {
+    lines.push('Preserve the exact subject pose, position, screen direction, prop state, light level and physical event from the previous-cut reference. Continue from the same instant; change only the shot size and camera composition required by this frame.');
+  } else if (segmentContinuous) {
+    lines.push('Preserve the exact subject pose, position, screen direction, prop state, light level and physical event from the previous-segment final-frame reference. Continue from the same instant; change only the shot size and camera composition required by this frame.');
+  }
+  if (exclude.length) lines.push(`Do not add: ${exclude.join('; ')}.`);
+  lines.push('No text, no watermark, no borders — a single clean full-bleed 16:9 frame.');
+  return lines.join('\n');
+}
 
 /** 分镜图风格预设：与 novel-characters / novel-art 同名对齐（realistic / cinematic / ghibli / inkwash）。
  *  短语必须出现在每条分镜图提示词里——同一部剧的分镜图不许画风漂。 */
@@ -551,7 +606,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], continuity: [], scriptState: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], framePlan: [], continuity: [], scriptState: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -568,6 +623,10 @@ export function gateReport(board, ctx = {}) {
   const promptDetailRequired = board?.promptDetailMode === PROMPT_DETAIL_MODE;
   if (board?.promptDetailMode && !promptDetailRequired) {
     bad.promptDetail.push(`promptDetailMode「${board.promptDetailMode}」不支持，应为「${PROMPT_DETAIL_MODE}」`);
+  }
+  const framePlanRequired = board?.framePlanMode === FRAME_PLAN_MODE;
+  if (board?.framePlanMode && !framePlanRequired) {
+    bad.framePlan.push(`framePlanMode「${board.framePlanMode}」不支持，应为「${FRAME_PLAN_MODE}」`);
   }
   const detailMinChars = promptLang === 'en' ? 24 : 10;
   const checkPromptFields = (obj, fields, owner, text) => {
@@ -859,6 +918,74 @@ export function gateReport(board, ctx = {}) {
         if (promptDetailRequired) {
           checkPromptFields(cut?.visualPlan, VISUAL_PLAN_FIELDS, `${cid}.visualPlan`, slices[ci]);
         }
+        if (framePlanRequired) {
+          const plan = cut?.framePlan;
+          let ready = plan && typeof plan === 'object' && !Array.isArray(plan);
+          if (!ready) {
+            bad.framePlan.push(`${cid} 缺 framePlan`);
+          } else {
+            if (!FRAME_ROLES.includes(plan.role)) {
+              bad.framePlan.push(`${cid}.framePlan.role「${plan.role}」不合法`);
+              ready = false;
+            }
+            if (!FRAME_DENSITIES.includes(plan.density)) {
+              bad.framePlan.push(`${cid}.framePlan.density「${plan.density}」不合法`);
+              ready = false;
+            }
+            for (const field of FRAME_PLAN_TEXT_FIELDS) {
+              const value = hasText(plan[field]) ? plan[field].trim() : '';
+              if (!value) {
+                bad.framePlan.push(`${cid}.framePlan.${field} 为空`);
+                ready = false;
+              } else {
+                if (value.length < 24) bad.framePlan.push(`${cid}.framePlan.${field} 太短（${value.length} 字符，至少 24）`);
+                if (CJK.test(value)) bad.framePlan.push(`${cid}.framePlan.${field} 必须使用英文`);
+              }
+            }
+            for (const field of FRAME_PLAN_ARRAY_FIELDS) {
+              const values = plan[field];
+              if (!Array.isArray(values)) {
+                bad.framePlan.push(`${cid}.framePlan.${field} 必须是数组`);
+                ready = false;
+                continue;
+              }
+              const max = field === 'storyCues' ? 4 : field === 'exclude' ? 6 : 3;
+              if (values.length > max) bad.framePlan.push(`${cid}.framePlan.${field} 最多 ${max} 项，避免堆砌`);
+              values.forEach((value, i) => {
+                if (!hasText(value)) bad.framePlan.push(`${cid}.framePlan.${field}[${i}] 为空`);
+                else {
+                  if (value.trim().length < 12) bad.framePlan.push(`${cid}.framePlan.${field}[${i}] 太短（至少 12 字符）`);
+                  if (CJK.test(value)) bad.framePlan.push(`${cid}.framePlan.${field}[${i}] 必须使用英文`);
+                }
+              });
+            }
+            if (ready) {
+              const foregroundN = plan.foreground.length;
+              const backgroundN = plan.background.length;
+              const storyCueN = plan.storyCues.length;
+              if (!plan.exclude.length) bad.framePlan.push(`${cid}.framePlan.exclude 至少 1 项，防止额外人物或无关陈设污染`);
+              if (plan.density === 'sparse') {
+                if (foregroundN + backgroundN > 2) bad.framePlan.push(`${cid} 是 sparse，但前后景辅助元素超过 2 项`);
+                if (storyCueN < 1 || storyCueN > 2) bad.framePlan.push(`${cid} 是 sparse，storyCues 应为 1–2 项`);
+              } else if (plan.density === 'balanced') {
+                if (foregroundN + backgroundN < 1) bad.framePlan.push(`${cid} 是 balanced，至少需要 1 项前景或背景支撑`);
+                if (storyCueN < 1) bad.framePlan.push(`${cid} 是 balanced，至少需要 1 项 storyCue`);
+              } else if (plan.density === 'rich') {
+                if (foregroundN < 1 || backgroundN < 1) bad.framePlan.push(`${cid} 是 rich，前景和背景都至少需要 1 项`);
+                if (storyCueN < 2) bad.framePlan.push(`${cid} 是 rich，至少需要 2 项 storyCues`);
+              }
+              if (plan.role === 'establishing' && (plan.density !== 'rich' || !['extreme-wide', 'wide'].includes(cut?.size))) {
+                bad.framePlan.push(`${cid} 是 establishing，必须使用 wide/extreme-wide + rich`);
+              }
+              if (plan.role === 'insert' && (!['close', 'extreme-close'].includes(cut?.size) || plan.density === 'rich')) {
+                bad.framePlan.push(`${cid} 是 insert，必须使用 close/extreme-close + sparse/balanced`);
+              }
+              if (plan.role === 'reaction' && plan.density === 'rich') {
+                bad.framePlan.push(`${cid} 是 reaction，应使用 sparse/balanced，避免背景内容抢情绪`);
+              }
+            }
+          }
+        }
         if (continuityRequired) {
           validateState(cut?.startState, `${cid}.startState`);
           validateState(cut?.endState, `${cid}.endState`);
@@ -896,16 +1023,20 @@ export function gateReport(board, ctx = {}) {
           }
         }
         const frame = String(cut?.frame ?? '');
+        const imagePrompt = buildFrameImagePrompt(cut, {
+          cutIndex: ci,
+          segmentContinuous: ci === 0 && seg?.handoff?.kind === 'continuous',
+        });
         if (!frame.trim()) bad.english.push(`${cid} 的分镜图提示词为空`);
-        if (CJK.test(frame)) bad.english.push(`${cid} 的分镜图提示词混入了非英文`);
-        if (style && !frame.toLowerCase().includes(style.phrase.toLowerCase())) {
+        if (CJK.test(imagePrompt)) bad.english.push(`${cid} 的完整分镜图提示词混入了非英文`);
+        if (style && !imagePrompt.toLowerCase().includes(style.phrase.toLowerCase())) {
           bad.style.push(`${cid} 的分镜图提示词缺风格短语「${style.phrase}」`);
         }
         for (const name of banned) {
-          if (frame.includes(name)) bad.names.push(`${cid} 的分镜图提示词出现角色名「${name}」`);
+          if (imagePrompt.includes(name)) bad.names.push(`${cid} 的完整分镜图提示词出现角色名「${name}」`);
         }
 
-        // 镜头配方：id 在卡库里 + 每条必备短语进了本切的 frame
+        // 镜头配方：id 在卡库里 + 每条必备短语进了本切组装后的完整 imagePrompt
         // 判定与 shot-recipes 的 checkRecipes 完全一致：两边小写化后 includes，逐条全中才算过
         if (recipes && typeof cut?.recipe === 'string' && cut.recipe) {
           recipeRefs += 1;
@@ -913,7 +1044,7 @@ export function gateReport(board, ctx = {}) {
           if (!card) {
             bad.recipe.push(`${cid} 引用的配方「${cut.recipe}」不在配方库里`);
           } else {
-            const lower = frame.toLowerCase();
+            const lower = imagePrompt.toLowerCase();
             for (const ph of card.must_phrases ?? []) {
               if (!lower.includes(String(ph).toLowerCase())) {
                 bad.recipe.push(`${cid} 的分镜图提示词缺配方「${card.name}」的必备短语「${ph}」`);
@@ -1067,14 +1198,20 @@ export function gateReport(board, ctx = {}) {
     bad.promptDetail.length === 0,
     bad.promptDetail.length ? bad.promptDetail.join('；') : promptDetailRequired ? '' : `未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`,
   );
+  add(
+    'frame-density',
+    '分镜图按镜头功能分配 sparse／balanced／rich，结构化内容进入最终 imagePrompt',
+    bad.framePlan.length === 0,
+    bad.framePlan.length ? bad.framePlan.join('；') : framePlanRequired ? '' : `未启用 framePlanMode=${FRAME_PLAN_MODE}，分镜图密度检查跳过`,
+  );
   add('style-phrase', `分镜图风格短语统一（${style ? `${styleId}：${style.phrase}` : '预设无效'}）——同剧不许画风漂`, bad.style.length === 0, bad.style.join('；'));
-  add('prompt-english', '分镜图提示词全英文且非空', bad.english.length === 0, bad.english.join('；'));
+  add('prompt-english', '完整分镜图提示词全英文且基础 frame 非空', bad.english.length === 0, bad.english.join('；'));
   add('prompt-no-names', '英文提示词不含角色名（分镜图提示词恒查；中文 H3 提示词放行）', bad.names.length === 0, banned.length ? bad.names.join('；') : SKIP_NAMES);
   add('refs', '场次／人物／道具对账剧本', bad.refs.length === 0, script ? bad.refs.join('；') : SKIP_SCRIPT);
   // 可选挂载的门放最后：没给 --shots 就跳过；给了但全篇没引用配方也算通过，但要明说，不静默
   add(
     'shot-recipe',
-    '引用的配方存在、必备短语进了分镜图提示词、多格配方连排够格数',
+    '引用的配方存在、必备短语进了完整 imagePrompt、多格配方连排够格数',
     bad.recipe.length === 0,
     recipes ? (bad.recipe.length ? bad.recipe.join('；') : recipeRefs ? '' : NO_RECIPE) : SKIP_SHOTS,
   );
@@ -1179,6 +1316,7 @@ export function seedFromScript(script, epRange = null) {
     params: { minSegmentSeconds: 5, maxSegmentSeconds: 10 },
     cameraPlanMode: CAMERA_PLAN_MODE,
     promptDetailMode: PROMPT_DETAIL_MODE,
+    framePlanMode: FRAME_PLAN_MODE,
     continuityMode: CONTINUITY_MODE,
     episodes,
   };
@@ -1188,10 +1326,10 @@ export function seedFromScript(script, epRange = null) {
 /* export — H3 投产包                                                   */
 /* ------------------------------------------------------------------ */
 /*
- * 固定投产结构：每段一个文件夹——E01-01/f1.png … fN.png + prompt.md
- * （h3Prompt 原样），根部一份 manifest：按 Picture 序列出该段要挂的
- * 分镜图路径、秒数、缺图标注。提示词就躺在图旁边，整个文件夹拖给
- * H3 就是一次生成。纯函数返回文件清单，落盘在 CLI 层——可测性。
+ * 固定投产结构：每段一个文件夹——E01-01/f1.png … fN.png、逐切
+ * f1.prompt.md … fN.prompt.md（完整 imagePrompt）+ prompt.md（h3Prompt 原样）。
+ * 根部 manifest 按 Picture 序列出图片、分镜图提示词、秒数和缺图标注。
+ * 纯函数返回文件清单，落盘在 CLI 层——可测性。
  */
 export function exportPack(board, script, { imageExists = () => false, dir = '.' } = {}) {
   const prefix = dir === '.' ? '' : `${dir}/`;
@@ -1209,6 +1347,18 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
       const promptMd = `# ${seg.id} · H3 提示词\n\n首帧 = **f1.png**。图片按 Picture 序号挂载：\n\n${mapping}\n\n---\n\n${seg.h3Prompt ?? ''}\n`;
       files.push({ path: `${prefix}${seg.id}/prompt.md`, content: promptMd });
       const pictures = (seg.cuts ?? []).map((_, i) => `${prefix}${seg.id}/f${i + 1}.png`);
+      const imagePrompts = (seg.cuts ?? []).map((cut, i) => {
+        const path = `${prefix}${seg.id}/f${i + 1}.prompt.md`;
+        const prompt = buildFrameImagePrompt(cut, {
+          cutIndex: i,
+          segmentContinuous: i === 0 && seg?.handoff?.kind === 'continuous',
+        });
+        files.push({
+          path,
+          content: `# ${seg.id} · Picture ${i + 1} · 分镜图提示词\n\n${prompt}\n`,
+        });
+        return path;
+      });
       const missing = pictures.filter((rel) => !imageExists(rel));
       missingTotal += missing.length;
       manifest.push({
@@ -1218,6 +1368,7 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
         cutStarts: cutStarts(seg.cuts),
         prompt: `${prefix}${seg.id}/prompt.md`,
         pictures,
+        imagePrompts,
         missing,
       });
     }
@@ -1266,11 +1417,12 @@ const GATE_LABELS_EN = {
   'h3-dialogue': 'Claimed dialogue appears verbatim inside the H3 <d> blocks',
   'h3-lang': 'Prompt language matches the promptLang setting',
   'prompt-detail': 'Production-rich prompt: visual layers per cut, layered soundscape and scored music arc per segment',
+  'frame-density': 'Frame prompts use role-driven sparse / balanced / rich density and compile into the final image prompt',
   'style-phrase': 'Frame-prompt style phrase consistent — one drama, one look',
-  'prompt-english': 'Frame prompts are English and non-empty',
-  'prompt-no-names': 'English prompts carry no character names',
+  'prompt-english': 'Compiled frame prompts are English and the base frame is non-empty',
+  'prompt-no-names': 'Compiled English frame prompts carry no character names',
   'refs': 'Scenes / characters / props audited against the script',
-  'shot-recipe': 'Referenced recipes exist, their must-phrases are in the frame prompt, multi-cut recipes run long enough',
+  'shot-recipe': 'Referenced recipes exist, their must-phrases are in the compiled image prompt, multi-cut recipes run long enough',
   'script-state-link': 'Every cut sourceState exactly inherits the before/after state of its claimed script beats',
 };
 const GATE_SKIPS_EN = {
@@ -1283,6 +1435,7 @@ const GATE_SKIPS_EN = {
     '本批分镜没有引用配方': 'no cut in this batch references a recipe',
     [`未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`]: `cameraPlanMode=${CAMERA_PLAN_MODE} not enabled — execution-plan checks skipped`,
     [`未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`]: `promptDetailMode=${PROMPT_DETAIL_MODE} not enabled — richness checks skipped`,
+    [`未启用 framePlanMode=${FRAME_PLAN_MODE}，分镜图密度检查跳过`]: `framePlanMode=${FRAME_PLAN_MODE} not enabled — frame-density checks skipped`,
     [`未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`]: `continuityMode=${CONTINUITY_MODE} not enabled — continuity checks skipped`,
     [`剧本未启用 continuityMode=${CONTINUITY_MODE}，跨层剧情状态检查跳过`]: `script continuityMode=${CONTINUITY_MODE} not enabled — cross-layer script-state checks skipped`,
 };
@@ -1330,7 +1483,8 @@ const I18N = {
     masterLabel: '主分镜图',
     subLabel: (i) => `子分镜 ${i}`,
     frameMissing: (i) => `#${i} 未生成`,
-    framePrompt: '分镜图提示词',
+    framePrompt: '完整分镜图提示词',
+    framePlan: '画面密度',
     h3Prompt: 'H3 提示词',
     h3Section: 'H3 视频提示词',
     showSegs: '▾ 展开全部段',
@@ -1394,7 +1548,8 @@ const I18N = {
     masterLabel: 'master frame',
     subLabel: (i) => `sub-frame ${i}`,
     frameMissing: (i) => `#${i} not generated`,
-    framePrompt: 'Frame prompt',
+    framePrompt: 'Full frame prompt',
+    framePlan: 'Frame density',
     h3Prompt: 'H3 prompt',
     h3Section: 'H3 video prompt',
     showSegs: '▾ Show all segments',
@@ -1436,6 +1591,12 @@ const cameraPlanSummary = (cut, t) => {
   const plan = cut?.cameraPlan;
   if (!plan || typeof plan !== 'object') return '';
   return `${t.cameraPlan}: ${plan.pace ?? '?'} / ${plan.magnitude ?? '?'} · ${plan.start ?? '?'} → ${plan.target ?? '?'} → ${plan.end ?? '?'} · ${plan.focus ?? '?'} · ${plan.intent ?? '?'} · ${t.transition}: ${t.transitionName(cut.transition)}`;
+};
+
+const framePlanSummary = (cut, t) => {
+  const plan = cut?.framePlan;
+  if (!plan || typeof plan !== 'object') return '';
+  return `${t.framePlan}: ${plan.role ?? '?'} / ${plan.density ?? '?'} · ${plan.keyMoment ?? '?'}`;
 };
 
 /* ------------------------------------------------------------------ */
@@ -1513,11 +1674,12 @@ export function renderMarkdown(board, ctx = {}) {
         // md 没有 title 属性，偏离的建议值直接写在格子里
         const rc = cutRecipe(cut, ctx.recipes, t);
         const cameraPlan = cameraPlanSummary(cut, t);
+        const framePlan = framePlanSummary(cut, t);
         out.push(mdRow([
           `#${ci + 1}`, `${starts[ci].toFixed(2)}s`, cut.seconds,
           t.sizeName(cut.size), t.cameraLabel(cut.camera),
           rc ? `${rc.name}${rc.drift ? ` ≠（${rc.drift}）` : ''}` : t.recipeNone,
-          `${summary}${cameraPlan ? `<br>**${cameraPlan}**` : ''}`, (cut.characters ?? []).map(n.char).join(t.listSep),
+          `${summary}${cameraPlan ? `<br>**${cameraPlan}**` : ''}${framePlan ? `<br>**${framePlan}**` : ''}`, (cut.characters ?? []).map(n.char).join(t.listSep),
         ]));
       });
       out.push('', `**${t.h3Section}**`, '', '```text', seg.h3Prompt ?? '', '```', '');
@@ -1614,9 +1776,13 @@ export function renderHtml(board, ctx = {}) {
             master = `<div class="fquad">${seg.cuts
               .map((cut, ci) => {
                 const label = ci === 0 ? t.masterLabel : t.subLabel(ci + 1);
+                const imagePrompt = buildFrameImagePrompt(cut, {
+                  cutIndex: ci,
+                  segmentContinuous: ci === 0 && seg?.handoff?.kind === 'continuous',
+                });
                 const body = has(ci)
                   ? `<img class="frame" src="${esc(frame(ci))}" alt="${esc(`${seg.id}#${ci + 1}`)}" loading="lazy">`
-                  : `<div class="frame ph fcell"><div class="fcell-h"><b>${esc(`${label} · ${t.frameMissing(ci + 1)}`)}</b><button class="copy mini" data-copy="${esc(cut.frame ?? '')}">${esc(t.copy)}</button></div><span class="fprompt">${esc(cut.frame ?? '')}</span></div>`;
+                  : `<div class="frame ph fcell"><div class="fcell-h"><b>${esc(`${label} · ${t.frameMissing(ci + 1)}`)}</b><button class="copy mini" data-copy="${esc(imagePrompt)}">${esc(t.copy)}</button></div><span class="fprompt">${esc(imagePrompt)}</span></div>`;
                 return body;
               })
               .join('\n')}</div>`;
@@ -1636,6 +1802,11 @@ export function renderHtml(board, ctx = {}) {
               // 「配方」列：偏离建议景别／运镜的加 ≠ 上标，建议值写进 title——提示而已，不是门
               const rc = cutRecipe(cut, ctx.recipes, t);
               const cameraPlan = cameraPlanSummary(cut, t);
+              const framePlan = framePlanSummary(cut, t);
+              const imagePrompt = buildFrameImagePrompt(cut, {
+                cutIndex: ci,
+                segmentContinuous: ci === 0 && seg?.handoff?.kind === 'continuous',
+              });
               return `<li class="cut">
   <div class="cut-h">
     <b>#${ci + 1}</b>
@@ -1644,10 +1815,11 @@ export function renderHtml(board, ctx = {}) {
     ${rc ? `<span class="cut-rc">${esc(rc.name)}${rc.drift ? `<sup title="${esc(rc.drift)}">≠</sup>` : ''}</span>` : ''}
     ${(cut.characters ?? []).map((id) => `<span class="chip">${esc(n.char(id))}</span>`).join('')}
     ${(cut.props ?? []).map((id) => `<span class="chip prop">${esc(n.prop(id))}</span>`).join('')}
-    <button class="copy mini" data-copy="${esc(cut.frame ?? '')}">${esc(t.framePrompt)}</button>
+    <button class="copy mini" data-copy="${esc(imagePrompt)}">${esc(t.framePrompt)}</button>
   </div>
   ${summary}
   ${cameraPlan ? `<p class="cplan"><b>${esc(t.cameraPlan)}</b>${esc(cameraPlan.replace(`${t.cameraPlan}: `, ''))}</p>` : ''}
+  ${framePlan ? `<p class="fplan"><b>${esc(t.framePlan)}</b>${esc(framePlan.replace(`${t.framePlan}: `, ''))}</p>` : ''}
 </li>`;
             })
             .join('\n');
@@ -1847,6 +2019,8 @@ section.top-sec{margin-top:34px}
 .cut-sc{font-size:11.5px;color:var(--ink-2)}
 .cplan{margin:6px 0 0;padding:7px 9px;border-left:2px solid var(--rule-2);background:var(--paper);font:400 10.5px/1.55 var(--mono);color:var(--ink-2)}
 .cplan b{margin-right:7px;color:var(--ink);font-family:var(--sans)}
+.fplan{margin:6px 0 0;padding:7px 9px;border-left:2px solid var(--seal-2);background:var(--side);font:400 10.5px/1.55 var(--mono);color:var(--ink-2)}
+.fplan b{margin-right:7px;color:var(--seal);font-family:var(--sans)}
 .cut-rc{font:400 10.5px/1.6 var(--mono);border:1px dashed var(--rule-2);border-radius:2px;padding:0 6px;color:var(--ink-2)}
 .cut-rc sup{color:var(--seal-2);font-weight:700;cursor:help;margin-left:2px}
 .cut-h .copy{margin-left:auto;opacity:0;transition:.15s}
@@ -2063,8 +2237,9 @@ const USAGE = `novel-storyboard.mjs — novel-storyboard skill 的确定性工�
          [--html|--md] [--outline] [--art]    分镜图从 ./<段号>/f<切序>.png 找
          [--lang zh|en]                       报告界面语言（默认 zh；未指定时读取 JSON 顶层 lang 字段）
          [--shots <卡片目录>]                  报告的「配方」列显示卡名并标注建议景别／运镜的偏离
-  export <sb.json> --script <script.json>     导出 H3 投产包：每段一个文件夹 <段号>/prompt.md
-         [--out .]                            （分镜图 f1..fN.png 同住）+ 根部 manifest.json
+  export <sb.json> --script <script.json>     导出投产包：每段一个文件夹 <段号>/prompt.md
+         [--out .]                            + f1.prompt.md..fN.prompt.md（完整分镜图提示词）
+                                              + 分镜图 f1..fN.png + 根部 manifest.json
   stats                                       读当前目录的 .gates.jsonl，汇总哪道门最常响、
                                               哪道门从没响过（validate/checkup 会自动累积）
   slug <name>                                 剧名转安全文件名
@@ -2215,7 +2390,7 @@ function main(argv) {
       writeFileSync(resolve(f.path), f.content, 'utf8');
     }
     const segN = pack.manifest.length;
-    console.log(`✓ ${segN} 段投产包 → ${resolve(dir)}/（每段一个文件夹：分镜图 + prompt.md；根部 manifest.json）`);
+    console.log(`✓ ${segN} 段投产包 → ${resolve(dir)}/（每段：分镜图 + 完整分镜图提示词 + H3 prompt.md；根部 manifest.json）`);
     if (pack.missingTotal) console.log(`⚠️ 缺 ${pack.missingTotal} 张分镜图，已在 manifest 的 missing 里标注——喂 H3 前先补齐`);
     return;
   }

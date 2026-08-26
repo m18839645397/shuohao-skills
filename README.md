@@ -14,7 +14,7 @@
 | [**novel-characters**](skills/novel-characters) | 把大纲定下的角色做成角色设定集：人物画像、形象提示词、音色提示词、角色设定图。吃 outline.json 预填角色表，报告语言与出图风格可选 |
 | [**novel-art**](skills/novel-art) | 给 AI 短剧出美术设定集（场景 + 叙事道具）：一致性锚点、光照与状态变体、尺度参照、无人无手白底提示词。吃 outline.json 预填清单，11 道质量门全部脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算；每场入口状态 + 每个动作拍 `statePatch` 计算剧情状态链，台词本按角色聚合并直接对接 TTS。11 道质量门全部脚本检查 |
-| [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：新 seed 每段 5–10 秒 → 分镜 2–5 秒 → 每切一张分镜图；逐切继承剧本 `sourceState`，再完成运镜、丰富 H3 和镜头/段间状态链，export 一键出投产包。20 道质量门全部脚本检查 |
+| [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：新 seed 每段 5–10 秒 → 分镜 2–5 秒 → 每切一张分镜图；逐切继承剧本 `sourceState`，再完成运镜、丰富 H3、自适应 sparse/balanced/rich 画面密度和镜头/段间状态链，export 一键出投产包。21 道质量门全部脚本检查 |
 
 **五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
 
@@ -91,17 +91,17 @@ $novel-script
 
 ### 5. 出分镜与 H3 提示词
 
-分镜消费前四段 JSON。先做第一集，并只生成第一段的整套分镜图确认方向：
+分镜消费前四段 JSON。先做第一集，并从本批挑 rich / balanced / sparse 各一张确认方向：
 
 ```text
 $novel-storyboard
 
 使用 outline.json、cast.json、art.json、script.json 制作第 1 集分镜。
-先生成第一段的全部分镜图供我确认，再继续整集；
+先生成 rich 定场/高潮、balanced 对话/移动、sparse 反应/特写各一张供我确认，再继续整集；
 输出到 D:\novels\demo\storyboard。
 ```
 
-新 seed 默认每段 5–10 秒，并启用 `cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"` 与 `continuityMode: "state-linked"`。每切先从认领的剧本首拍/末拍复制 `sourceState.before/after`，再翻译成摄影用 `startState/endState`；因此除了镜头间动作、光线、声音、轴线连续，第 20 道门还会拦截“分镜内部自洽，但没有继承剧本”的假连续。确认第一段后再扩到整集。
+新 seed 默认每段 5–10 秒，并启用 `cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"` 与 `continuityMode: "state-linked"`。每切先继承剧本状态，再按镜头功能选择 sparse / balanced / rich；报告和 export 统一输出完整 imagePrompt，避免只拿薄的基础 `frame` 出图。确认三档代表图后再扩到整集。
 
 完成后导出 H3 投产包：
 
@@ -241,7 +241,7 @@ for f in skills/*/scripts/selftest.mjs; do node "$f"; done
 ├── script/        ← novel-script 产出：<剧>-script.json / .md / -report.html
 ├── storyboard/    ← novel-storyboard 产出：<剧>-storyboard.json / .md / -report.html
 │   ├── manifest.json  ← export 产出
-│   ├── E01-01/        ← export 的分镜投产包，每段一个文件夹（prompt.md + f1..fN.png）
+│   ├── E01-01/        ← export 的分镜投产包，每段一个文件夹（H3 prompt.md + f1..fN.prompt.md + f1..fN.png）
 │   ├── E01-02/
 │   └── …
 ├── docs/          ← 自己写的使用说明、PR 草稿等（与机器产物解耦）

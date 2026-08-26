@@ -16,15 +16,16 @@
 - **提示词按官方口径默认英文、逐镜换行** — 每个镜头独立一行、切点时刻开头；台词/歌词/画面文字按官方规定保留原文（`<d>[Chinese] …</d>` 逐字）。`promptLang: 'zh'` 可切整条中文（对齐指令、字段名、镜头标记都有中文版）。写法规范已内化为 `references/h3-prompt.md`——**本 skill 自包含，不依赖任何外部 skill**
 - **每切有可执行的摄影计划** — 新 seed 默认开启 `cameraPlanMode: "cinematic-controlled"`：起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场逐字进入自己的 `[Shot k]`；固定镜头默认，一切只用一个主运镜
 - **最终提示词达到投产丰富度** — `promptDetailMode: "production-rich"` 要求逐切写空间、光线、主体、动作、效果、连续性，逐段写四层声景和配乐类型/配器/动态/同步点；不是靠字数堆形容词
+- **分镜图按叙事需要自动分配信息量** — `framePlanMode: "adaptive-density"` 按镜头功能选择 sparse / balanced / rich；报告和 export 确定性组装完整 imagePrompt，不再把薄的基础 `frame` 直接交给图像模型
 - **相邻镜头共享同一状态边界** — `continuityMode: "state-linked"` 对账每切八项 startState/endState、五项 transitionPlan 和连续段 handoff；Shot 2 起先承接同一瞬间再改变景别/机位
-- **先继承剧本，再设计摄影** — 上游剧本启用状态链时，每切 `sourceState.before/after` 精确复制认领首拍/末拍的计算状态；第 20 道门拦截“分镜内部自洽，但没有继承剧本”的假连续
+- **先继承剧本，再设计摄影** — 上游剧本启用状态链时，每切 `sourceState.before/after` 精确复制认领首拍/末拍的计算状态；跨层门拦截“分镜内部自洽，但没有继承剧本”的假连续
 - **分镜图是资产合成，不是凭空画** — 出图挂场景/角色/道具设定图当参考图，novel-art 和 novel-characters 的图在这一步真正被消费。有 codex 就真出图（可选）
 
 产出 `storyboard.json` + Markdown + 一个双击就能开的 `storyboard-report.html`：
 
 ![storyboard-report.html](assets/report.webp)
 
-## 质量门：20 道，全是代码
+## 质量门：21 道，全是代码
 
 与仓库里另外四个 skill 同一主张：**checklist 交给模型自觉是靠不住的**。
 
@@ -43,12 +44,13 @@
 | **H3 台词逐字** | 认领的每句台词逐字出现在 `<d>` 块里，改一个标点都过不去 |
 | **提示词语言一致** | 正文语言与 `promptLang` 双向对账：设定中文写成英文、设定英文混进中文，都拦 |
 | **投产提示词丰富度** | 逐切 `visualPlan` 六层、逐段声景四层和有配乐时的音乐四层逐字进入对应 H3 字段，并设中英文最低信息量；无配乐明确 N/A/无 |
+| **分镜图自适应密度** | `framePlan` 按 establishing / dialogue / reaction / action / reveal / insert / atmosphere 分配 sparse / balanced / rich 内容预算；字段数量、合理搭配和完整 imagePrompt 确定性检查 |
 | **镜间与段间连续性** | 相邻 cut 的八项末态/首态逐字相等，Shot 2 起切点/动作/光线/声音/轴线桥进入正确字段；同场连续 segment 的状态和 handoff 对账，换场/时间跳跃显式豁免 |
 | **风格短语统一** | `style` 预设（realistic / cinematic / ghibli / inkwash，与角色/场景 skill 同名对齐）的英文短语必须出现在每条分镜图提示词里——同剧不许画风漂 |
 | 分镜图提示词卫生 | 全英文非空 |
 | 提示词不含角色名 | 分镜图提示词恒查；H3 提示词仅英文模式查（中文放行，身份靠分镜图锚定）。给 `--outline` / `--cast` 才查，不给**明说跳过** |
 | 引用对账 | 场次/人物/道具全部对账剧本该场 |
-| **镜头配方**（可选挂载） | 给了 `--shots <卡片目录>` 才查：cut 的 `recipe` id 在卡库里、卡片的每条必备短语出现在该切的分镜图提示词里、多格配方的连排格数够。不给 `--shots` **明说跳过**；给了但全篇没引用配方也明说 |
+| **镜头配方**（可选挂载） | 给了 `--shots <卡片目录>` 才查：cut 的 `recipe` id 在卡库里、卡片的每条必备短语出现在该切组装后的完整 imagePrompt 里、多格配方的连排格数够。不给 `--shots` **明说跳过**；给了但全篇没引用配方也明说 |
 | **剧本状态继承** | 上游剧本启用状态链时，每切 `sourceState.before/after` 必须精确等于所认领首拍/末拍的计算状态 |
 
 自测里每道门都有**击穿用例**——证明它真的会拦。
@@ -115,10 +117,10 @@ node scripts/novel-storyboard.mjs render sb.json --html \
      --script script.json --outline outline.json --art art.json > storyboard-report.html
 node scripts/novel-storyboard.mjs render sb.json --html --lang en \
      --script script.json --outline outline.json --art art.json > storyboard-report.html   # 英文界面报告
-node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 投产包
+node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 + 每切完整分镜图提示词投产包
 ```
 
-`export` 的投产结构固定：**每段一个文件夹** `E01-01/`——分镜图 `f1..fN.png` 和 `prompt.md` 同住（头部 Picture ↔ 文件对照表**明确 f1.png 是首帧**、各图钉在第几秒，分隔线以下是 h3Prompt 原样），根部 `manifest.json` 带 Picture 序图清单、切点时刻表、缺图标注。一个段文件夹 = 一次 H3 生成的全部材料。
+`export` 的投产结构固定：**每段一个文件夹** `E01-01/`——分镜图 `f1..fN.png`、逐切完整 `f1.prompt.md..fN.prompt.md` 和 H3 `prompt.md` 同住；根部 `manifest.json` 带 Picture 序图清单、完整分镜图提示词路径、切点时刻表和缺图标注。
 
 ## 边界
 
@@ -126,7 +128,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 投
 - 口型/唇形同步暂不管——那是生成管线的事
 - 秒数是**下给视频模型的生成时长**不是估算；段上限、分镜节奏区间都在 `params` 里按模型调
 - 报告界面内置中英（`--lang`，默认中文）；提示词语言由 `promptLang` 单独控制（默认英文）
-- 分镜图默认先出第一段的整套（3–5 张）看效果，确认画风和构图再往后补——一集约 30–40 格，方向错了整批重来
+- 分镜图默认先挑 rich / balanced / sparse 各一张看效果，确认三档信息量和构图再往后补——一集约 30–40 格，方向错了整批重来
 
 ## 文件
 
@@ -134,12 +136,13 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 投
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / validate / checkup / render / export / slug
-  selftest.mjs           314 项断言，不调模型
+  selftest.mjs           338 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
   camera-direction.md    克制电影化运镜：执行计划、转场、按节拍自动选择
   prompt-detail.md       投产级丰富提示词：六层视觉、四层声景、配乐动态
+  frame-density.md       分镜图自适应 sparse / balanced / rich 画面密度
   continuity.md          镜间状态链、动作/光线/声音桥、段间 handoff
   storyboard-pass.md     切镜：分段规则、导演运镜手感、常见病
   frame.md               分镜图出图的 codex 调用契约
@@ -156,6 +159,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-314 项断言，覆盖节拍展开 / delivery 与剧本状态继承 / H3 骨架 / 克制运镜 / 丰富提示词 / 镜间状态链与段间 handoff / 20 道门逐项击穿 / 配方卡库 / seed / 中英渲染 / 导出。不调模型、不花额度、1 秒跑完。
+338 项断言，覆盖节拍展开 / delivery 与剧本状态继承 / H3 骨架 / 克制运镜 / 丰富视频提示词 / 自适应分镜图密度 / 镜间状态链与段间 handoff / 21 道门逐项击穿 / 配方卡库 / seed / 中英渲染 / 导出。不调模型、不花额度、1 秒跑完。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。

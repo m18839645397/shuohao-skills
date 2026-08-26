@@ -4,7 +4,17 @@
 
 ## 分镜图是什么
 
-一个分镜一张 16:9 关键帧，**每段一个文件夹**：`<段号>/f<切序>.png`（f1 = 主分镜图），H3 提示词由 `export` 写成同文件夹里的 `prompt.md`（头部对照表明确 f1.png 是首帧、各图钉在第几秒）——整个文件夹拖给 H3 就是一次生成。第 1 切的是**主分镜图**（H3 对齐指令把它钉在 0.00 秒），其余是**子分镜图**（各钉在自己的切点时刻）——一段的每一格构图都由图控制，不靠文字赌。**它是资产合成，不是凭空画**：场景、角色、道具长什么样已经由上游设定图定死，分镜图只负责把它们按这一格的构图摆进同一帧。
+一个分镜一张 16:9 关键帧，**每段一个文件夹**：`<段号>/f<切序>.png`（f1 = 主分镜图）。`export` 同时写出 H3 的 `prompt.md` 和每切完整的 `f1.prompt.md`、`f2.prompt.md`……。第 1 切钉在 0.00 秒，其余子分镜图钉在各自切点。
+
+**它是受控资产合成，不是凭空画，也不是只把人摆进空背景。** 场景、角色、道具长什么样由上游设定图锁定；`framePlan` 决定这一格该用多少空间层次和叙事线索。完整规则见 `frame-density.md`。
+
+## 提示词来源
+
+- `frame`：基础英文提示词，只保存景别、主体、基础构图和统一风格短语。
+- `framePlan`：镜头功能、sparse/balanced/rich 密度、关键瞬间、前后景、叙事线索、气氛和排除项。
+- `buildFrameImagePrompt()`：确定性合并参考图职责、`frame`、`framePlan`、链式连续性和固定负面约束。
+
+报告里的「完整分镜图提示词」复制按钮和 `export` 的 `fN.prompt.md` 都使用组装结果。**不要再直接复制 JSON 里的薄 `frame` 去出图。**
 
 ## 参考图挂载（命根子）
 
@@ -18,7 +28,7 @@
 6. **提示词必须写明人物此刻的位置状态**：已上船 / 在舱内 / 站在桥头——切镜时人物位置是连续的剧情状态，只写构图不写状态，模型会把上了船的人又画回岸上（踩过）
 7. **连续段的 f1 挂上一段最后一帧**：`handoff.kind=continuous` 时，下一段 f1 除标准资产外必须挂上一段最后一张分镜图；`scene-change` / `time-jump` 不挂
 
-提示词开头明说每张参考图的用途（which is the environment / whose face to match / which prop to match），别让模型猜。
+完整 imagePrompt 开头已经声明环境、角色和道具参考图的职责；实际调用时仍要按附件顺序明确哪张是环境、谁的角色图、哪件道具图，别让模型猜。
 
 f2 起固定追加：`Preserve the exact subject pose, position, screen direction, prop state, light level and physical event from the previous-cut reference. Continue from the same instant; change only the shot size and camera composition required by this frame.` 连续段 f1 把 `previous-cut` 改成 `previous-segment final-frame`。
 
@@ -36,11 +46,13 @@ f2 起固定追加：`Preserve the exact subject pose, position, screen directio
 
 ## 出图范围
 
-**默认先出第一段的整套分镜图给用户看效果**（主 + 子共 3–5 张）——画风、资产一致性、正反打构图对了再往后补。一集约 30–40 格就是同样次数的调用，方向错了整批重来。用户明确说全出再全出。
+**默认先出三张代表图**：一张 rich 定场/高潮、一张 balanced 对话/移动、一张 sparse 反应/道具特写。三档都确认信息量、视觉中心和资产一致性后再补整批。一集约 30–40 格就是同样次数的调用，方向错了整批重来。用户明确说全出再全出。
 
 ## 拿到图先扫一眼
 
 - 和场景设定图是不是同一个世界（材质、光、旧化程度）
 - 角色的脸和衣服对不对得上角色设定图
 - 景别对不对（提示词写 close-up 出来却是全景 → 重生成）
+- rich 镜头是否有清楚的前中后景和至少两条叙事线索，而不是只多了无关摆件
+- sparse 镜头是否保持单一视觉中心、材质和光影细节，而不是低质量空白
 - 有没有多出来的人（背景围观群众是最常见污染）——多人就重生成
