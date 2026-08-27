@@ -63,6 +63,10 @@ ok(/illustration/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 环�
 ok(/concept art|matte painting/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 环境预设必须禁概念图／绘景');
 ok(/3d render|CGI/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 环境预设必须禁 3D／CGI');
 ok(!/pore|skin|subsurface/i.test(SCENE_STYLE_PRESETS.realistic.surface), '环境预设不带皮肤毛孔那套——那是角色的');
+ok(/one intended focal plane/.test(SCENE_STYLE_PRESETS.naturalistic.render), '现实风格环境使用单一真实焦平面');
+ok(/fingerprints cluster around handles/.test(SCENE_STYLE_PRESETS.naturalistic.surface), '现实风格磨损按使用原因局部分布');
+ok(/real weight, support compression and grounded contact shadows/.test(SCENE_STYLE_PRESETS.naturalistic.surface), '现实风格物件遵守重量、支撑与接触阴影');
+ok(/uniform micro-detail/.test(SCENE_STYLE_PRESETS.naturalistic.negative) && /artificial depth-map blur/.test(SCENE_STYLE_PRESETS.naturalistic.negative), '现实风格环境反向禁止均匀细节与假景深');
 eq(scenePreset('nope'), SCENE_STYLE_PRESETS.realistic, '未知风格退回默认');
 
 /* ---------------- slug ---------------- */
@@ -251,6 +255,12 @@ eq(ANCHOR_RANGE.join('-'), '3-5', '锚点范围 3–5');
   ok(gate(d, 'style-match').ok, '现实风格场景／道具纪实摄影合同全部通过');
   ok(/available daylight|practical light/.test(preset.render), '现实风格使用可用光与实用光源');
   ok(/theatrical fog|heroic composition/.test(preset.negative), '现实风格禁止戏剧雾与英雄化构图');
+  const weak = JSON.parse(JSON.stringify(d));
+  weak.scenes[0].image.negativePrompt = weak.scenes[0].image.negativePrompt
+    .replace('uniform micro-detail, ', '')
+    .replace('procedural surface texture, ', '')
+    .replace('uniformly distributed grime, ', '');
+  ok(gate(weak, 'style-match').detail.includes('均匀／程序化材质细节'), '现实风格环境反向缺均匀材质禁项被拦');
 }
 
 /* ---------------- validate 结构检查 ---------------- */

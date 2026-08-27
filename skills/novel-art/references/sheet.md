@@ -29,7 +29,7 @@
 
 提示词字段 `image.sheet`，场景和道具都落到 `./images/<slug>-sheet.png`（`slug` 命令生成安全文件名）。
 
-`cinematic` 另保留主区的单帧实景参考 `./images/<slug>-master.png` 供 storyboard 使用。它只包含主视角，不带 L 形细节格、边框或文字；技术 sheet 继续用于锚点和材质核对。
+`cinematic` 与 `naturalistic` 另保留主区的单帧摄影参考 `./images/<slug>-master.png` 供 storyboard 使用。它只包含主视角，不带 L 形细节格、边框或文字；`naturalistic` 的 master 还要保持真实焦平面、局部磨损和物理接触，技术 sheet 继续用于锚点和材质核对。
 
 ## 三条硬要求
 

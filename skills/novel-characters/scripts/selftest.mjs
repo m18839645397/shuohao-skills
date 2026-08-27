@@ -954,10 +954,26 @@ ok(STYLE_PRESETS.realistic.surface !== STYLE_PRESETS.ghibli.surface, '写实与�
     c.image.negativePrompt = preset.negative;
   }
   eq(validateCast(naturalistic, SOURCE, 'zh', 'naturalistic').length, 0, '现实风格真人纪实合同全部通过');
-  ok(/available or practical light/.test(preset.render) && /dramatic rim lighting/.test(preset.negative), '现实风格使用现场光并禁止戏剧化轮廓光');
+  ok(/real optical lens with a deliberate focus hierarchy/.test(preset.render) && /dramatic rim lighting/.test(preset.negative), '现实风格使用真实光学清晰度层级并禁止戏剧化轮廓光');
+  ok(/pores read most strongly across the nose and inner cheeks/.test(preset.surface) && /eyelids and upper cheeks stay smoother/.test(preset.surface), '现实风格皮肤细节按面部分区而非全脸贴毛孔');
+  ok(/much of the rear hair mass left unresolved/.test(preset.surface) && /wear only where use causes it/.test(preset.surface), '现实风格头发与服装只在真实可见位置给细节');
+  ok(/weight-bearing leg/.test(preset.surface) && /contact visibly compresses/.test(preset.surface), '现实风格姿态与接触遵守受力和形变');
+  ok(/uniform micro-detail/.test(preset.negative) && /artificial depth-map blur/.test(preset.negative), '现实风格反向禁止均匀微细节和假景深');
   ok(/ordinary real person/.test(preset.tags.join(' ')), '现实风格标签强调普通真人');
+  const identity = buildIdentityPrompt(naturalistic[0], 'naturalistic');
+  ok(identity.includes('two separately photographed exposures') && identity.includes('0.1–0.2 EV'), '现实风格身份候选是同次试装的两次真实曝光，不复制同一渲染');
+  ok(identity.includes('focus on the nearer iris') && identity.includes('off-white or grey cyclorama'), '现实风格身份候选锁近眼焦点与不完美棚景');
   const screen = buildScreenTestPrompt(naturalistic[0], 'naturalistic');
   ok(screen.includes(preset.render) && screen.includes('ONE single-frame live-action casting'), '现实风格可生成单帧真人screen-test');
+  ok(screen.includes('nearer iris') && screen.includes('never equal full-frame clarity'), '现实风格screen-test保持近眼清晰、远侧渐软');
+  ok(screen.includes('sole compression') && screen.includes('load transfer at the contact point'), '现实风格screen-test写明站姿承重与接触形变');
+
+  const weakNaturalistic = JSON.parse(JSON.stringify(naturalistic));
+  weakNaturalistic[0].image.negativePrompt = weakNaturalistic[0].image.negativePrompt
+    .replace('uniform micro-detail, ', '')
+    .replace('uniform pore texture, ', '')
+    .replace('procedural pore texture, ', '');
+  ok(validateCast(weakNaturalistic, SOURCE, 'zh', 'naturalistic').some((x) => x.includes('均匀／程序化皮肤微细节')), '现实风格反向缺均匀微细节禁项被拦');
 }
 
 // 校验器要能抓住风格与反向提示词搞反

@@ -1012,9 +1012,22 @@ ok(gate(FIXTURE, 'candidate-grid-selection', CTX).ok && gate(FIXTURE, 'candidate
   const first = doc.episodes[0].segments[0].cuts[0];
   const prompt = buildFrameImagePrompt(first, { styleId: 'naturalistic' });
   ok(prompt.includes(STYLE_PRESETS.naturalistic.guard) && prompt.includes('dramatic rim lighting'), '现实风格终稿带日常观察guard并禁止戏剧化轮廓光');
+  ok(prompt.includes('nearer iris is sharpest') && prompt.includes('lose resolution progressively'), '现实风格终稿按真实焦平面分配清晰度');
+  ok(prompt.includes('skin detail regional') && prompt.includes('contact deformation'), '现实风格终稿约束局部材质和接触形变');
+  ok(prompt.includes('uniform micro-detail') && prompt.includes('artificial depth-map blur'), '现实风格终稿禁止均匀微细节与假景深');
   const gridDoc = candidateGridDoc();
   const grid = buildCandidateGridPrompt(gridDoc.episodes[0].segments[0], 'naturalistic');
   ok(grid.includes('naturalistic live-action documentary photographic'), '现实风格九宫格使用真人纪实摄影联系表');
+  ok(grid.includes('one readable focal plane per panel') && grid.includes('Roughness means less resolved detail'), '现实风格粗九宫格也保留光学层级，粗糙不等于均匀噪声');
+
+  const syntheticGrid = candidateGridDoc();
+  syntheticGrid.style = 'naturalistic';
+  syntheticGrid.episodes[0].segments[0].candidateBoard.cells[0].prompt += ' with everything perfectly sharp across the frame';
+  ok(!gate(syntheticGrid, 'candidate-grid-selection', {}).ok, '现实风格九宫格混入全图等清晰信号被拦');
+
+  const syntheticFrame = JSON.parse(JSON.stringify(doc));
+  syntheticFrame.episodes[0].segments[0].cuts[0].frame += ' with uniform micro-detail';
+  ok(!gate(syntheticFrame, 'style-phrase').ok, '现实风格终稿混入均匀微细节信号被拦');
 }
 {
   const doc = clone(FIXTURE);

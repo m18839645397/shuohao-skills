@@ -1,6 +1,6 @@
 ---
 name: novel-characters
-version: 2.2.0
+version: 2.3.0
 description: |
   从小说或短故事里拆出角色表、人物画像、形象提示词、音色提示词，
   并给每个角色出角色设定图（左半身像 + 右全身三视图 + 细节条），产出 JSON + Markdown + 可交互的 report.html。
@@ -78,7 +78,7 @@ node {baseDir}/scripts/novel-characters.mjs styles   # 打印预设的完整内�
 
 读 `{baseDir}/references/style-presets.md`。**换风格是整套换**——每个预设自带 render / surface / lighting / negative / tags 五块，整块取用，不要混搭。
 
-`cinematic` 是严格真人摄影：正向禁止 illustration/painterly/concept art/anime/cel，反向必须禁这些风格以及3D/CGI、娃娃脸、大眼和美容修图，但不能禁 photorealistic。`validate` 会逐项拦截。
+`cinematic` 是严格真人摄影；`naturalistic` 在此基础上再约束真实相机的信息分配：焦点平面最清楚、皮肤/发丝/织物局部而不均匀、承重与接触有物理反馈、现场光不完美。两者都不能禁 photorealistic，`validate` 会逐项拦截。
 
 版面规则（16:9 三区、比例、细节让位）**不随风格变**，变的只有渲染质感。
 
@@ -224,7 +224,7 @@ node {baseDir}/scripts/novel-characters.mjs identity-prompt <cast.json> <角色�
 
 用打印出的提示词生成 2–3 个候选，选定为 `images/<slug>-identity.png`；随后生成 sheet 时，把该角色自己的 identity 图作为参考图。supporting / minor 默认直接生成 sheet。这样额外调用只花在重要角色上。
 
-`cinematic` 还要为进入分镜的角色生成单帧真人定妆参考：
+`cinematic` 与 `naturalistic` 还要为进入分镜的角色生成单帧真人定妆参考：
 
 ```bash
 node {baseDir}/scripts/novel-characters.mjs screen-test-prompt <cast.json> <角色名或 id>
@@ -279,7 +279,7 @@ report.html 的样式约定见 `{baseDir}/references/report-style.md`——要�
 ├── report.html                    ← 双击就能开
 └── images/
     ├── <slug>-identity.png        ← protagonist / major 的身份锁定图
-    ├── <slug>-screen-test.png     ← cinematic 下游真人定妆单帧
+    ├── <slug>-screen-test.png     ← cinematic / naturalistic 下游真人定妆单帧
     └── <slug>-sheet.png           ← 完整角色设定图
 ```
 
@@ -303,7 +303,7 @@ report.html 的样式约定见 `{baseDir}/references/report-style.md`——要�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-408 项断言，不调模型、不花额度，覆盖群像身份、cinematic、naturalistic、screen-test、合成、校验与渲染。改完脚本先跑这个。
+417 项断言，不调模型、不花额度，覆盖群像身份、cinematic、naturalistic、screen-test、合成、校验与渲染。改完脚本先跑这个。
 
 ## 自测夹具
 

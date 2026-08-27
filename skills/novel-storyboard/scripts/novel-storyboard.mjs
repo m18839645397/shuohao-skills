@@ -226,6 +226,9 @@ export function buildCandidateGridPrompt(seg, styleId = 'realistic') {
     'Row 1 is the pre-action entry state; row 2 is action development; row 3 is the visible result or exit state.',
   ];
   if (style?.guard) lines.push(style.guard);
+  if (styleId === 'naturalistic') {
+    lines.push('Even at rough-board detail, preserve a real optical hierarchy: one readable focal plane per panel, progressively softer non-primary planes and localized material cues. Roughness means less resolved detail, not uniform texture noise or equal sharpness everywhere.');
+  }
   for (const spec of CANDIDATE_GRID_SPEC) {
     const cell = cells.find((x) => x?.id === spec.id);
     lines.push(`[Cell ${spec.id} — ${spec.moment} / ${spec.size}] ${String(cell?.prompt ?? '').trim()}`);
@@ -281,8 +284,8 @@ export const STYLE_PRESETS = {
     strictPhoto: true,
     gridLead: 'naturalistic live-action documentary photographic',
     phrase: 'naturalistic live-action frame',
-    guard: 'Naturalistic live-action observation with real ordinary people, practical clothing and real existing locations, captured with available daylight or believable practical light, neutral white balance, modest dynamic range, handheld or observational framing, ordinary body proportions and minimal styling',
-    negative: 'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character or environment, Unreal Engine look, game cinematic, glamour portrait, dramatic rim lighting, heroic composition, theatrical fog, luxury styling, beauty retouching, airbrushed skin, artificial teal-orange grading',
+    guard: 'Naturalistic live-action observation with real ordinary people, practical clothing and real existing locations, captured with available daylight or believable practical light, neutral white balance, modest dynamic range, observational framing and minimal styling. Use a real optical focus hierarchy: the intended subject plane or nearer iris is sharpest while the far eye and cheek, ear, rear hairline, foreground and deeper background lose resolution progressively through natural lens falloff. Keep skin detail regional, hair partly grouped into unresolved dark masses and clothing wear localized to actual use. Show physical causality: weight-bearing posture changes pelvis and shoulders, soles compress into the floor, fingers and objects create contact deformation, cloth displacement and grounded shadows. Allow weak uncontrolled fill, uneven practical backgrounds and imperfect subject separation',
+    negative: 'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character or environment, Unreal Engine look, game cinematic, glamour portrait, uniform micro-detail, uniform pore texture, procedural surface texture, equal sharpness across the image, excessive clarity, excessive digital sharpening, HDR local contrast, artificial depth-map blur, every hair strand equally resolved, uniform textile texture, procedural fabric grain, perfect studio illumination, perfect subject-background separation, contact without deformation, floating weightless objects, geometrically level shoulders and pelvis, symmetrical mannequin stance, dramatic rim lighting, heroic composition, theatrical fog, luxury styling, beauty retouching, airbrushed skin, artificial teal-orange grading',
   },
   ghibli: { zh: '吉卜力手绘', phrase: 'hand-painted anime film still' },
   inkwash: { zh: '国风水墨', phrase: 'chinese ink-wash cinematic frame' },
@@ -290,6 +293,7 @@ export const STYLE_PRESETS = {
 export const DEFAULT_STYLE = 'realistic';
 
 const CJK = /[㐀-鿿぀-ヿ가-힯]/;
+const NATURALISTIC_SYNTHETIC_SIGNAL = /uniform(?:ly)? (?:micro-detail|pore texture|textile texture)|procedural (?:surface texture|fabric grain)|equal sharpness|perfectly sharp across (?:the )?(?:image|frame)|excessive clarity|artificial depth-map blur|perfect studio separation|glamour lighting/i;
 const r1 = (n) => Math.round(n * 10) / 10;
 
 /* ------------------------------------------------------------------ */
@@ -851,6 +855,10 @@ export function gateReport(board, ctx = {}) {
               const leaked = prompt.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
               if (leaked) bad.candidate.push(`${sid}.${spec.id}.prompt 混入动画／绘画信号「${leaked[0]}」`);
             }
+            if (styleId === 'naturalistic') {
+              const synthetic = prompt.match(NATURALISTIC_SYNTHETIC_SIGNAL);
+              if (synthetic) bad.candidate.push(`${sid}.${spec.id}.prompt 混入均匀清晰／程序化质感信号「${synthetic[0]}」`);
+            }
             for (const name of banned) if (prompt.includes(name)) bad.candidate.push(`${sid}.${spec.id}.prompt 出现角色名「${name}」`);
           }
           const selected = Array.isArray(boardPlan.selected) ? boardPlan.selected : [];
@@ -937,6 +945,10 @@ export function gateReport(board, ctx = {}) {
       if (style?.strictPhoto) {
         const leaked = rest.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
         if (leaked) bad.style.push(`${sid} 的 ${styleId} H3 正文混入动画／绘画信号「${leaked[0]}」`);
+      }
+      if (styleId === 'naturalistic') {
+        const synthetic = rest.match(NATURALISTIC_SYNTHETIC_SIGNAL);
+        if (synthetic) bad.style.push(`${sid} 的 naturalistic H3 正文混入均匀清晰／程序化质感信号「${synthetic[0]}」`);
       }
 
       const slices = h3CutSlices(h3, cuts.length, promptLang);
@@ -1284,6 +1296,10 @@ export function gateReport(board, ctx = {}) {
           if (!imagePrompt.includes(style.guard) || !imagePrompt.includes(style.negative)) {
             bad.style.push(`${cid} 的完整 ${styleId} imagePrompt 缺严格真人摄影 guard／negative`);
           }
+        }
+        if (styleId === 'naturalistic') {
+          const synthetic = frame.match(NATURALISTIC_SYNTHETIC_SIGNAL);
+          if (synthetic) bad.style.push(`${cid} 的 naturalistic frame 混入均匀清晰／程序化质感信号「${synthetic[0]}」`);
         }
         for (const name of banned) {
           if (imagePrompt.includes(name)) bad.names.push(`${cid} 的完整分镜图提示词出现角色名「${name}」`);

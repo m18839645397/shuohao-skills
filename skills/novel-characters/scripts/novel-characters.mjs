@@ -247,14 +247,14 @@ export const STYLE_PRESETS = {
   naturalistic: {
     label: { zh: '现实风格', en: 'Naturalistic reality', ja: 'ナチュラリスティック・リアリティ' },
     render:
-      'Naturalistic live-action documentary casting photography of a real person in an ordinary real-world environment, captured with available or practical light, neutral white balance, modest dynamic range, observational framing and minimal styling',
+      'Naturalistic live-action documentary casting photography of a real person in an ordinary real-world environment, captured through a real optical lens with a deliberate focus hierarchy, restrained digital sharpening, moderate microcontrast, natural optical softness, available or practical light, neutral white balance, modest dynamic range, observational framing and minimal styling',
     surface:
-      'Unretouched everyday skin with localized pores, uneven oil and dry zones, small blemishes, faint capillaries and ordinary age or fatigue; anatomically normal eyes and teeth; naturally imperfect hair; practical lived-in clothing with irregular lint, wrinkles, repairs, compressed seams and non-repeating wear; ordinary non-model-perfect body proportions',
+      'Skin detail is regional rather than uniform: pores read most strongly across the nose and inner cheeks, eyelids and upper cheeks stay smoother, the forehead may carry a slight irregular sheen, nostrils and ear rims show localized redness, and sparse blemishes, peach fuzz or irregular stubble appear only where the character facts support them. The nearer iris or primary facial plane is the sharpest point while the far eye, rear cheek, ear and rear hairline resolve progressively softer without artificial depth-map blur. Hair has a few flyaways and clumped locks, with some temple scalp visible where plausible and much of the rear hair mass left unresolved. Practical clothing shows wear only where use causes it — softened or dirty cuffs, polished elbows and knees, collar discoloration, compression under straps, gravity-driven folds and real weight — never uniform textile noise. Standing posture is asymmetrical with one weight-bearing leg, pelvis and shoulders compensating naturally, sole compression and grounded contact shadows; any hand contact visibly compresses, blanches or displaces the touched skin, cloth or object',
     lighting:
-      'LIGHTING IN THE LEFT ZONE ONLY: soft available window light, overcast daylight or a believable practical lamp with no beauty key, rim light or glamour fill. LIGHTING IN THE RIGHT ZONES: neutral documentary wardrobe-reference lighting with natural floor contact and no theatrical modelling',
+      'LIGHTING IN THE LEFT ZONE ONLY: one soft available window, overcast source or believable practical lamp with weak uncontrolled room fill, natural falloff and no beauty key, rim light, glamour fill or perfect subject separation. LIGHTING IN THE RIGHT ZONES: neutral documentary wardrobe-reference lighting with small real-world unevenness, natural floor contact and no theatrical modelling',
     negative:
-      'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character, Unreal Engine look, game cinematic, glamour portrait, beauty campaign, beauty-filter smoothing, airbrushed skin, dramatic rim lighting, heroic pose, luxury styling, theatrical costume, artificial teal-orange grading, over-sharpened HDR, plastic or waxy skin, stiff mannequin posing, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
-    tags: ['naturalistic live action', 'documentary casting', 'available light', 'ordinary real person', 'neutral colour'],
+      'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character, Unreal Engine look, game cinematic, glamour portrait, beauty campaign, beauty-filter smoothing, airbrushed skin, uniform micro-detail, uniform pore texture, procedural pore texture, embossed skin map, hyper-detailed skin everywhere, equal sharpness across the image, excessive clarity, excessive digital sharpening, HDR local contrast, artificial depth-map blur, every hair strand equally resolved, uniform textile texture, procedural fabric grain, perfect studio illumination, perfect subject-background separation, dramatic rim lighting, heroic pose, geometrically level shoulders and pelvis, symmetrical mannequin stance, contact without deformation, elongated fingers, symmetrical hand pose, luxury styling, theatrical costume, artificial teal-orange grading, over-sharpened HDR, plastic or waxy skin, stiff mannequin posing, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
+    tags: ['naturalistic live action', 'documentary casting', 'real optical focus hierarchy', 'ordinary real person', 'localized material detail'],
   },
 
   ghibli: {
@@ -607,9 +607,12 @@ export function buildIdentityPrompt(character, style = DEFAULT_STYLE) {
     .filter((a) => typeof a?.prompt === 'string' && a.prompt.trim())
     .map((a) => `- ${a.type} / ${a.scale}: ${a.prompt.trim()}`)
     .join('\n');
+  const naturalistic = style === 'naturalistic';
   return [
-    'Create ONE identity-lock character portrait, not a model sheet and not a multi-character lineup.',
-    'Neutral full-body three-quarter standing view beside one large head-and-shoulders portrait of the same person on a pure white background.',
+    'Create ONE identity-lock character image, not a model sheet and not a multi-character lineup.',
+    naturalistic
+      ? 'Use two separately photographed exposures from the same ordinary wardrobe-test session, assembled side by side without panel borders: one large three-quarter head-and-shoulders portrait and one full-body three-quarter standing view. Use an imperfect off-white or grey cyclorama with slightly uneven illumination, weak uncontrolled room fill and no polished subject-background separation.'
+      : 'Neutral full-body three-quarter standing view beside one large head-and-shoulders portrait of the same person on a pure white background.',
     'The purpose is to lock a memorable, production-usable identity before generating the turnaround sheet.',
     `Importance: ${character.importance ?? 'supporting'}.`,
     `Use the identity, ethnicity, era, region, anatomy and costume facts from this source-grounded description; ignore its shot, background and lighting instructions: ${String(character?.image?.prompt ?? '').trim()}`,
@@ -617,8 +620,15 @@ export function buildIdentityPrompt(character, style = DEFAULT_STYLE) {
     anchors,
     preset.render,
     preset.surface,
+    naturalistic
+      ? 'Treat the two views as separate real exposures, not duplicated renderings: let the performer shift subtly between them and allow a restrained 0.1–0.2 EV exposure difference plus minute white-balance and focus variation while preserving the same identity, costume and session.'
+      : '',
+    naturalistic
+      ? 'In the portrait exposure focus on the nearer iris; let the far eye and rear cheek fall slightly softer, with the ear and rear hairline less resolved. In the full-body exposure use an asymmetrical weight-bearing stance, compensating pelvis and shoulders, sole compression and grounded contact shadows. Any hand contact must visibly deform the touched skin, cloth or object.'
+      : '',
     'Do not add fashionable accessories, fantasy ornament, unusual hair colour or decorative clutter unless explicitly required by an anchor.',
     'The full-body figure and portrait must be the same person with identical facial geometry, hairstyle, body proportions and costume.',
+    naturalistic ? `Avoid: ${preset.negative}.` : '',
     'No text, labels, watermark, borders or extra people.',
   ].filter(Boolean).join('\n');
 }
@@ -632,13 +642,20 @@ export function buildScreenTestPrompt(character, style = DEFAULT_STYLE) {
     .join('\n');
   return [
     'Create ONE single-frame live-action casting and wardrobe screen test, not a model sheet, not a turnaround and not a multi-panel layout.',
-    'Show one real human performer in a relaxed natural standing pose, three-quarter full-body framing against a neutral grey practical studio background.',
+    style === 'naturalistic'
+      ? 'Show one real human performer in a relaxed three-quarter full-body view inside an imperfect practical wardrobe-test studio: an uneven off-white or grey cyclorama, one soft available or practical source, weak uncontrolled room fill and no rim-lit or polished subject-background separation.'
+      : 'Show one real human performer in a relaxed natural standing pose, three-quarter full-body framing against a neutral grey practical studio background.',
     `Use the identity, ethnicity, era, region, anatomy and costume facts from this source-grounded description: ${String(character?.image?.prompt ?? '').trim()}`,
     'Mandatory identity anchors:',
     anchors,
     preset.render,
     preset.surface,
-    'Use realistic optical depth, subtle sensor grain, natural highlight roll-off and unretouched skin. Keep ordinary human eye size, facial asymmetry and non-model-perfect body proportions.',
+    style === 'naturalistic'
+      ? 'Place primary focus on the nearer iris or intended subject plane; the far eye and cheek should fall mildly softer, with the ear and rear hairline less resolved through natural optical falloff rather than synthetic depth-map blur. Use restrained sharpening and moderate microcontrast, never equal full-frame clarity.'
+      : 'Use realistic optical depth, subtle sensor grain, natural highlight roll-off and unretouched skin. Keep ordinary human eye size, facial asymmetry and non-model-perfect body proportions.',
+    style === 'naturalistic'
+      ? 'Use one clearly weight-bearing leg and one relaxed leg, with natural pelvis and shoulder compensation, sole compression and grounded contact shadows. Fingers remain ordinary and asymmetrical; if a hand touches skin, cloth or an object, show compression, blanching, displacement or load transfer at the contact point.'
+      : '',
     `Avoid: ${preset.negative}.`,
     'No text, labels, watermark, borders, extra people or contact-sheet panels.',
   ].filter(Boolean).join('\n');
@@ -969,7 +986,7 @@ export function validateCast(
     if (image && SUPPORTED_STYLES.includes(style)) {
       const neg = typeof image.negativePrompt === 'string' ? image.negativePrompt : '';
       const bansPhotorealism = /photorealistic/i.test(neg);
-      if (['realistic', 'cinematic'].includes(style) && bansPhotorealism) {
+      if (['realistic', 'cinematic', 'naturalistic'].includes(style) && bansPhotorealism) {
         at(name, `style=${style} 却在 negativePrompt 里禁 photorealistic——自相矛盾`);
       }
       if (['ghibli', 'inkwash'].includes(style) && !/photorealistic/i.test(neg)) {
@@ -993,6 +1010,17 @@ export function validateCast(
           [/oversized eyes|porcelain doll face|fashion-doll proportions/i, '娃娃脸／大眼／玩偶比例'],
         ]) {
           if (!re.test(neg)) at(name, `${style} negativePrompt 缺「${label}」禁项`);
+        }
+        if (style === 'naturalistic') {
+          for (const [re, label] of [
+            [/uniform micro-detail|uniform pore texture|procedural pore texture/i, '均匀／程序化皮肤微细节'],
+            [/equal sharpness|excessive clarity|HDR local contrast|artificial depth-map blur/i, '全图等清晰／过度清晰／假景深'],
+            [/every hair strand equally resolved|uniform textile texture|procedural fabric grain/i, '均匀发丝／布料纹理'],
+            [/perfect studio illumination|perfect subject-background separation/i, '完美影棚／完美主体分离'],
+            [/contact without deformation|symmetrical mannequin stance/i, '无形变接触／对称人台站姿'],
+          ]) {
+            if (!re.test(neg)) at(name, `naturalistic negativePrompt 缺「${label}」禁项`);
+          }
         }
       }
     }

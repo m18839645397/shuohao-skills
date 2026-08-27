@@ -48,12 +48,12 @@ export const SCENE_STYLE_PRESETS = {
   naturalistic: {
     label: '现实风格',
     render:
-      'Naturalistic documentary location and prop reference photography of a real existing place or ordinary physical object, captured with available daylight or believable practical light, neutral white balance, observational framing, modest dynamic range and minimal production styling',
+      'Naturalistic documentary location and prop reference photography of a real existing place or ordinary physical object, captured through a real optical lens with one intended focal plane, restrained digital sharpening, moderate microcontrast, natural foreground-to-background softness, available daylight or believable practical light, neutral white balance, observational framing, modest dynamic range and minimal production styling',
     surface:
-      'Everyday photographic material response at ordinary scale: irregular dust, water marks, repairs, cheap finishes, uneven paint, lint, fingerprints, dents and non-designed clutter; natural atmospheric depth without theatrical haze, glamour polish or idealized set dressing',
+      'Everyday materials at believable scale with localized evidence of use: fingerprints cluster around handles and switches, floor wear follows traffic paths, water marks gather below leaks and edges, dust settles in sheltered corners, fabric polish and compression appear at repeated contact points, and repairs interrupt rather than repeat the original finish. Objects sit with real weight, support compression and grounded contact shadows. Only the intended focal plane resolves fully; foreground and rear planes lose texture naturally instead of carrying uniform detail noise. Keep non-designed clutter and ordinary cheap finishes without theatrical haze, glamour polish or idealized set dressing',
     negative:
-      'people, human figures, characters, crowds, silhouettes of people, illustration, digital painting, painterly brushwork, concept art, matte painting, anime background, cel shading, toon shading, stylized geometry, 3d render, CGI environment, Unreal Engine look, game cinematic, dramatic rim lighting, theatrical fog, heroic composition, luxury showroom styling, artificial teal-orange grading, over-sharpened HDR, sterile perfection, warped perspective, melted geometry, floating objects, text, watermark, signature',
-    tags: ['naturalistic documentary photography', 'real location', 'available light', 'ordinary materials', 'neutral colour'],
+      'people, human figures, characters, crowds, silhouettes of people, illustration, digital painting, painterly brushwork, concept art, matte painting, anime background, cel shading, toon shading, stylized geometry, 3d render, CGI environment, Unreal Engine look, game cinematic, uniform micro-detail, procedural surface texture, uniformly distributed grime, equal sharpness across the image, excessive clarity, excessive digital sharpening, HDR local contrast, artificial depth-map blur, perfect showroom illumination, advertising-perfect subject separation, uniformly pristine edges, floating weightless objects, dramatic rim lighting, theatrical fog, heroic composition, luxury showroom styling, artificial teal-orange grading, over-sharpened HDR, sterile perfection, warped perspective, melted geometry, floating objects, text, watermark, signature',
+    tags: ['naturalistic documentary photography', 'real optical focus hierarchy', 'localized wear', 'ordinary materials', 'physical contact'],
   },
 
   ghibli: {
@@ -243,7 +243,7 @@ export function gateReport(doc, castNames = null) {
 
     // 风格与反向词匹配 + sheet 带渲染句
     const bansPhotorealism = /photorealistic/i.test(neg);
-    if (['realistic', 'cinematic'].includes(style) && bansPhotorealism) bad.style.push(`${label} 禁了 photorealistic`);
+    if (['realistic', 'cinematic', 'naturalistic'].includes(style) && bansPhotorealism) bad.style.push(`${label} 禁了 photorealistic`);
     if (['ghibli', 'inkwash'].includes(style) && !bansPhotorealism) bad.style.push(`${label} 没禁 photorealistic`);
     if (thText(s?.image?.sheet) && !s.image.sheet.includes(preset.render)) bad.style.push(`${label} 的 sheet 缺渲染句`);
     if (['cinematic', 'naturalistic'].includes(style)) {
@@ -257,6 +257,14 @@ export function gateReport(doc, castNames = null) {
         [/anime|cel shading|toon shading/i, 'anime／cel／toon'],
         [/3d render|\bCGI\b|Unreal Engine|game cinematic/i, '3D／CGI／game'],
       ]) if (!re.test(neg)) bad.style.push(`${label} 的 ${style} negativePrompt 缺「${missing}」禁项`);
+      if (style === 'naturalistic') {
+        for (const [re, missing] of [
+          [/uniform micro-detail|procedural surface texture|uniformly distributed grime/i, '均匀／程序化材质细节'],
+          [/equal sharpness|excessive clarity|HDR local contrast|artificial depth-map blur/i, '全图等清晰／过度清晰／假景深'],
+          [/perfect showroom illumination|advertising-perfect subject separation/i, '完美展厅光／广告式主体分离'],
+          [/floating weightless objects|uniformly pristine edges/i, '无重量物件／全新均匀边缘'],
+        ]) if (!re.test(neg)) bad.style.push(`${label} 的 naturalistic negativePrompt 缺「${missing}」禁项`);
+      }
     }
   }
 

@@ -1,6 +1,6 @@
 ---
 name: novel-art
-version: 1.6.0
+version: 1.7.0
 description: |
   给 AI 短剧出美术设定集（场景 + 叙事道具）：场景的设计意图、一致性锚点、光照时段变体、
   空景提示词；道具的戏剧功能、状态变体、尺度参照、白底无手提示词。
@@ -107,12 +107,12 @@ node {baseDir}/scripts/novel-art.mjs validate <art.json> --cast <cast.json>
 
 场景和道具各一张 16:9 设定图，版面都是**主视角大图 + 底部和右侧的 L 形细节边框**。场景：标准取景 + 第一个光照状态，细节格是锚点特写。道具：白底三四分之一主视角（主状态），细节格是锚点特写 + 其他状态 + 侧面。读 `{baseDir}/references/sheet.md` 照调用契约做，要点：
 
-`cinematic` 每项先用 `image.prompt` 单独生成无面板 `images/<slug>-master.png`，再把 master 作为参考生成技术 sheet。master 给 storyboard，sheet 给锚点/状态/QC。
+`cinematic` 与 `naturalistic` 每项先用 `image.prompt` 单独生成无面板 `images/<slug>-master.png`，再把 master 作为参考生成技术 sheet。master 给 storyboard，sheet 给锚点/状态/QC；`naturalistic` 的 master 必须守真实焦平面、局部磨损与物理接触。
 
 - **没有 codex 就整步跳过**，只交提示词
 - **全图无人**；道具图另加**无手**、**纯白背景**，出现人影或手就重生成
 - **变体场景拿母场景成图当参考图**（`-i` + stdin）——变体机制的意义就在这
-- `cinematic` 下游分镜优先使用场景主视角单帧 `images/<slug>-master.png`，不要把整张 L 形技术设定表作为唯一实景参考
+- `cinematic` / `naturalistic` 下游分镜优先使用主视角单帧 `images/<slug>-master.png`，不要把整张 L 形技术设定表作为唯一摄影参考
 - 一个场景一次调用绝不批量；单个失败跳过不阻断
 
 ### Step 5 — 输出与汇报
@@ -135,7 +135,7 @@ node {baseDir}/scripts/novel-art.mjs render <剧名>-art.json --html > art-repor
 ├── <剧名>-art.md
 ├── art-report.html                ← 双击就能开
 └── images/
-    ├── <slug>-master.png          ← cinematic 下游实景/主状态单帧
+    ├── <slug>-master.png          ← cinematic / naturalistic 下游摄影/主状态单帧
     └── <slug>-sheet.png           ← 技术设定表
 ```
 
@@ -165,7 +165,7 @@ seed 吃 outline.json 的场景与道具两块（大纲没有 `props` 时道具�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-175 项断言，不调模型、不花额度，含 cinematic 与 naturalistic 摄影合同及动画/CG禁项击穿。改完脚本先跑这个。
+180 项断言，不调模型、不花额度，含 cinematic 与 naturalistic 摄影合同及动画/CG禁项击穿。改完脚本先跑这个。
 
 ## 自带样例
 

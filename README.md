@@ -62,7 +62,7 @@ D:\novels\demo\outline\<剧名>-outline.json 生成角色设定集。
 D:\novels\demo\characters。
 ```
 
-可用画风：`realistic`（半写实厚涂）、`cinematic`（电影级真人写实）、`naturalistic`（现实/纪实风格）、`ghibli`（手绘动画）、`inkwash`（国风水墨）。
+可用画风：`realistic`（半写实厚涂）、`cinematic`（电影级真人写实）、`naturalistic`（现实/纪实：真实焦平面、局部材质差异、物理接触与不完美现场光）、`ghibli`（手绘动画）、`inkwash`（国风水墨）。`naturalistic` 下游优先使用角色 `screen-test.png` 与场景/道具 `master.png` 单帧，不把多面板技术设定表当成主要镜头参考。
 
 ### 3. 做场景与叙事道具
 
