@@ -86,6 +86,7 @@ Two things never follow the language: **image and TTS prompts stay English** (th
 | --- | --- |
 | `realistic` | Semi-realistic painterly — skin with pores and texture, fabric with weave and wear. Default |
 | `cinematic` | Cinematic photorealism — natural skin, feature-film portrait lighting, physically grounded wardrobe and restrained filmic colour |
+| `naturalistic` | Naturalistic reality — ordinary people and clothes, real environments, available light, neutral colour and minimal styling |
 | `ghibli` | Ghibli-like hand-painted cel — even ink linework, a single soft shadow tone, flat colour |
 | `inkwash` | Chinese ink-wash — xuan-paper negative space, calligraphic linework and restrained mineral-colour accents |
 
@@ -147,7 +148,7 @@ Four hard rules, all checked deterministically by a script rather than trusted t
 | `evidence` must be a **verbatim, contiguous** span of the source | Stops invention. Dialogue split by a narration beat may not be stitched back together |
 | Image prompts must **not contain character names** | Image models bias hard on names and will draw the character they remember instead of yours |
 | **Language split** per field | Human-readable fields follow `--lang`, image and TTS prompts are always English — the model drifts otherwise |
-| **Style matches its negative prompt** | `realistic` / `cinematic` must not ban `photorealistic`; `ghibli` / `inkwash` must — get it backwards and the whole batch is wasted |
+| **Style matches its negative prompt** | `realistic` / `cinematic` / `naturalistic` must not ban photorealistic; animation/ink styles must |
 | **Importance-driven identity budget** | protagonist 4–5, major 3–4, supporting 2–3, minor 1–2; leads cover all three recognition distances |
 | **Signature anchors land in production prompts** | every anchor appears verbatim in image.prompt and image.sheet; important roles need contrastAgainst and cross-character anchor collisions fail |
 | Structure and enums | `importance` is one of exactly four values |
@@ -184,7 +185,7 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # filesystem
 SKILL.md                 the workflow the agent reads
 scripts/
   novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / screen-test-prompt / render / slug
-  selftest.mjs           397 assertions, never calls a model
+  selftest.mjs           408 assertions, never calls a model
 references/
   roster-pass.md         pass 1: scanning for characters
   profile-pass.md        pass 2: building a character sheet (9 hard rules)
@@ -192,7 +193,7 @@ references/
   schema.md              sheet structure and which language each field takes
   sheet.md               the codex contract for model-sheet generation
   report-style.md        design conventions for report.html
-  style-presets.md       image style presets (realistic / cinematic / ghibli / inkwash)
+  style-presets.md       image style presets, including naturalistic reality
 ```
 
 ## Self-test
@@ -201,6 +202,6 @@ references/
 node scripts/selftest.mjs
 ```
 
-397 assertions across ensemble design, strict live-action cinematic contracts, screen-test prompts, signature anchors, assembly, localization, validation, and rendering. No model calls or quota.
+408 assertions across ensemble design, cinematic, naturalistic reality, screen-test prompts, signature anchors, assembly and validation. No model calls.
 
 Full selftest verified on Windows with Node 22.19.0; Node 18 or newer is required.

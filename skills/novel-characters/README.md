@@ -86,6 +86,7 @@ node scripts/novel-characters.mjs seed outline.json > seed.json
 | --- | --- |
 | `realistic` | 半写实厚涂，皮肤有毛孔和肌理，布料有织纹磨损。默认 |
 | `cinematic` | 电影级真人写实，真实肤质、电影人像布光、物理可信服装材质与克制电影调色 |
+| `naturalistic` | 现实/纪实风格，普通真人、日常服装、现实环境、可用光、中性色和最低修饰 |
 | `ghibli` | 吉卜力式手绘赛璐璐，等宽墨线、单层柔和阴影、平涂色块 |
 | `inkwash` | 国风水墨，宣纸留白、书法线条、分层墨色与克制矿物色点染 |
 
@@ -148,7 +149,7 @@ node scripts/novel-characters.mjs styles ghibli   # 看某一个的完整内容
 | `evidence` 必须是原文**逐字连续**片段 | 防编造。被「他说」断开的对白不许拼接 |
 | 出图 prompt **不许出现人名** | 图像模型对人名偏见极重，会画成它记忆里的角色 |
 | 字段**语言分工** | 人类字段跟随 `--lang`、出图和 TTS 提示词永远英文，模型会漂 |
-| **风格与反向提示词匹配** | `realistic` / `cinematic` 不能禁 `photorealistic`、`ghibli` / `inkwash` 必须禁，搞反整批图就废 |
+| **风格与反向提示词匹配** | `realistic` / `cinematic` / `naturalistic` 不禁 photorealistic；动画/水墨档必须禁 |
 | **重要度视觉预算** | protagonist 4–5、major 3–4、supporting 2–3、minor 1–2；主角覆盖三个识别距离 |
 | **签名锚点落地** | 每条锚点逐字进入 image.prompt 和 image.sheet；重要角色必须 contrastAgainst，跨角色锚点雷同会被拦 |
 | 结构 + 枚举 | `importance` 只能是那四个值 |
@@ -185,7 +186,7 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # 安全文�
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / screen-test-prompt / render / slug
-  selftest.mjs           397 项断言，不调模型
+  selftest.mjs           408 项断言，不调模型
 references/
   roster-pass.md         第一趟：扫描角色
   profile-pass.md        第二趟：生成角色卡（9 条硬规则）
@@ -193,7 +194,7 @@ references/
   schema.md              角色卡结构 + 字段语言归属
   sheet.md               角色设定图出图的 codex 调用契约
   report-style.md        report.html 的设计约定
-  style-presets.md       出图风格预设（realistic / cinematic / ghibli / inkwash）
+  style-presets.md       出图风格预设（含 naturalistic 现实风格）
 ```
 
 ## 自测
@@ -202,6 +203,6 @@ references/
 node scripts/selftest.mjs
 ```
 
-397 项断言，覆盖群像视觉矩阵、严格真人 cinematic、screen-test、身份锚点、合成、多语言、校验和渲染。不调模型、不花额度、1 秒跑完。
+408 项断言，覆盖群像视觉矩阵、cinematic、naturalistic现实风格、screen-test、身份锚点、合成和校验。不调模型、不花额度。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥18。

@@ -49,7 +49,7 @@
 | **投产提示词丰富度** | 逐切 `visualPlan` 六层、逐段声景四层和有配乐时的音乐四层逐字进入对应 H3 字段，并设中英文最低信息量；无配乐明确 N/A/无 |
 | **分镜图自适应密度** | `framePlan` 按 establishing / dialogue / reaction / action / reveal / insert / atmosphere 分配 sparse / balanced / rich 内容预算；字段数量、合理搭配和完整 imagePrompt 确定性检查 |
 | **镜间与段间连续性** | 相邻 cut 的八项末态/首态逐字相等，Shot 2 起切点/动作/光线/声音/轴线桥进入正确字段；同场连续 segment 的状态和 handoff 对账，换场/时间跳跃显式豁免 |
-| **风格短语统一** | `style` 预设（realistic / cinematic / ghibli / inkwash，与角色/场景 skill 同名对齐）的英文短语必须出现在每条分镜图提示词里——同剧不许画风漂 |
+| **风格短语统一** | `style` 支持 realistic / cinematic / naturalistic / ghibli / inkwash；现实风格强调日常真人、现实地点、可用光与中性曝光 |
 | 分镜图提示词卫生 | 全英文非空 |
 | 提示词不含角色名 | 分镜图提示词恒查；H3 提示词仅英文模式查（中文放行，身份靠分镜图锚定）。给 `--outline` / `--cast` 才查，不给**明说跳过** |
 | 引用对账 | 场次/人物/道具全部对账剧本该场 |
@@ -139,7 +139,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 + �
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / select / validate / checkup / render / export / slug
-  selftest.mjs           385 项断言，不调模型
+  selftest.mjs           388 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
@@ -164,6 +164,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-385 项断言，覆盖严格 cinematic 真人摄影、九宫格候选、人工选择、edgePlans、入口帧、连续性和23道门。不调模型、不花额度。
+388 项断言，覆盖 cinematic、naturalistic现实分镜、九宫格、人工选择、edgePlans、入口帧和23道门。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。

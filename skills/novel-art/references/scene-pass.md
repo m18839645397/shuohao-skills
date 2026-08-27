@@ -26,6 +26,8 @@
 
    `cinematic` 必须写成真实地点或实体搭景的现场连续性摄影，不能使用 environment concept art / illustration / painterly / matte painting / anime / cel shading 等正向词；主视角和 sheet 都逐字带严格摄影 render 句。
 
+   `naturalistic` 使用现实存在的普通地点/物件、可用日光或可信实用灯、非设计化杂乱和中性色；不得加入戏剧雾、英雄构图、奢华置景、强轮廓光或大片式青橙调色。
+
 6. **能做变体就别开新景。**AI 生成一个新环境很便宜，但**每多一个独立环境就多一份一致性维护**。outline 里带复用方案的场景（seedNote 会提示），用 `variantOf` + `changes` 挂到母场景上：改时段、换天气、换前景、删道具，桥板细节这类资产直接复用。
 
 7. **不要把角色 skill 的表面处理带进来。**毛孔、皮下散射是皮肤的事；环境的真实感来自**用旧的材质**——掉漆、水渍、包浆、磨白的木纹。预设里写好了，照用。

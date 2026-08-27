@@ -1,6 +1,6 @@
 ---
 name: novel-storyboard
-version: 1.13.0
+version: 1.14.0
 description: |
   给 AI 短剧出分镜：三层结构——段（新 seed 默认 5–10 秒，一次视频生成）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
@@ -76,6 +76,8 @@ metadata:
 - `--shots <卡片目录>`：**可选**挂载 shot-recipes 的镜头配方卡库（指向 `shot-recipes/references/cards`，只接受目录不接受导出的 JSON），开启 `shot-recipe` 门。没装 shot-recipes 就别给——本 skill 自包含，不依赖它
 
 **一次切几集**：跟剧本的批次走（剧本写到哪就分到哪），默认一批 ≤ 3 集。
+
+风格跟上游同名：`naturalistic` 是现实/纪实风格，使用普通真人、现实地点、可用光、中性曝光和观察式构图；不使用 cinematic 的戏剧轮廓光、英雄构图、剧场雾和大片调色。
 
 ### Step 1 — seed 工作底稿
 
@@ -205,7 +207,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-385 项断言，不调模型、不花额度。23 道门包含严格 cinematic 真人摄影、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
+388 项断言，不调模型、不花额度。23 道门包含 cinematic、naturalistic、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
 
 ## 自带样例
 

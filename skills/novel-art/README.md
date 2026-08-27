@@ -54,7 +54,7 @@ novel-art        → art.json     （哪里 + 手里拿的：美术资产）
 
 - `seed <outline.json>` 确定性预填场景与道具两张清单，连出现集、承载爽点一起搬；大纲没有 `props` 时道具留空，模型按 `prop-pass.md` 从原文提取
 - `validate --cast <cast.json>` 用角色表查提示词里有没有混进角色名
-- 画风预设与 novel-characters **同名对齐**（realistic / cinematic / ghibli / inkwash）但内容是环境版——真实感来自用旧的材质，不是皮肤毛孔
+- 画风预设与角色层同名对齐，新增 `naturalistic` 现实风格：真实普通地点、可用光、非设计化杂乱和中性色
 
 ## 命令行直接用
 
@@ -77,7 +77,7 @@ node scripts/novel-art.mjs styles                            # 看画风预设
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-art.mjs          seed / validate / checkup / render / styles / slug
-  selftest.mjs           171 项断言，不调模型
+  selftest.mjs           175 项断言，不调模型
 references/
   schema.md              art.json 结构 + 硬规则
   scene-pass.md          怎么填场景设定（AI 短剧的思路）
@@ -96,6 +96,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-171 项断言，覆盖 seed / 严格 cinematic 实景摄影 / 11 道门逐项击穿 / 中英渲染 / 导出。不调模型、不花额度。
+175 项断言，覆盖 seed / cinematic / naturalistic现实场景摄影 / 11 道门 / 渲染 / 导出。
 
 **只在 macOS + Node 24 上实测过。** 代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但**没验过**。

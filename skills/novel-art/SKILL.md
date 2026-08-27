@@ -1,6 +1,6 @@
 ---
 name: novel-art
-version: 1.5.0
+version: 1.6.0
 description: |
   给 AI 短剧出美术设定集（场景 + 叙事道具）：场景的设计意图、一致性锚点、光照时段变体、
   空景提示词；道具的戏剧功能、状态变体、尺度参照、白底无手提示词。
@@ -66,7 +66,7 @@ metadata:
 2. 小说原文——自己归纳场景清单（主舞台优先，参考 novel-outline 的主场景上限思路：别贪多）
 3. 用户手写的场景清单
 
-画风：默认 `realistic`；`cinematic` 是真实地点或实体搭景的现场连续性摄影，不是 environment concept art。正向禁插画/概念图/动画词，反向必须禁 illustration、concept/matte painting、anime/cel/toon、3D/CGI/game。跟角色 skill 保持同一档。
+画风：默认 `realistic`；`cinematic` 是剧情片实景/搭景摄影；`naturalistic` 是现实/纪实风格，使用真实普通地点与物件、可用光、非设计化杂乱和中性色，不做戏剧雾、英雄构图或大片调色；另有 `ghibli`、`inkwash`。
 
 有 cast.json（novel-characters 的产出）也带上——校验「提示词不含角色名」要用。
 
@@ -165,7 +165,7 @@ seed 吃 outline.json 的场景与道具两块（大纲没有 `props` 时道具�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-171 项断言，不调模型、不花额度，含严格 cinematic 实景摄影合同与动画/CG禁项击穿。改完脚本先跑这个。
+175 项断言，不调模型、不花额度，含 cinematic 与 naturalistic 摄影合同及动画/CG禁项击穿。改完脚本先跑这个。
 
 ## 自带样例
 

@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 /* 画风预设（环境版）                                                    */
 /* ------------------------------------------------------------------ */
 /*
- * 与 novel-characters 的画风同名对齐（realistic / cinematic / ghibli / inkwash），
+ * 与 novel-characters 的画风同名对齐（realistic / cinematic / naturalistic / ghibli / inkwash），
  * 但内容是环境的表面处理，不是皮肤毛孔——把角色那套带进环境是错的。
  * 换风格是整套换：render / surface / negative / tags 整块取用，不混搭。
  *
@@ -43,6 +43,17 @@ export const SCENE_STYLE_PRESETS = {
     negative:
       'people, human figures, characters, crowds, silhouettes of people, illustration, digital painting, painterly brushwork, concept art, matte painting, anime background, cel shading, toon shading, stylized geometry, 3d render, CGI environment, Unreal Engine look, game cinematic, plastic CGI look, game-engine sheen, over-sharpened HDR, crushed blacks, clipped highlights, artificial teal-orange grading, sterile showroom cleanliness, warped perspective, melted geometry, floating objects, text, watermark, signature',
     tags: ['live-action set photography', 'location continuity', 'cinema-camera reference', 'physical materials', 'filmic colour'],
+  },
+
+  naturalistic: {
+    label: '现实风格',
+    render:
+      'Naturalistic documentary location and prop reference photography of a real existing place or ordinary physical object, captured with available daylight or believable practical light, neutral white balance, observational framing, modest dynamic range and minimal production styling',
+    surface:
+      'Everyday photographic material response at ordinary scale: irregular dust, water marks, repairs, cheap finishes, uneven paint, lint, fingerprints, dents and non-designed clutter; natural atmospheric depth without theatrical haze, glamour polish or idealized set dressing',
+    negative:
+      'people, human figures, characters, crowds, silhouettes of people, illustration, digital painting, painterly brushwork, concept art, matte painting, anime background, cel shading, toon shading, stylized geometry, 3d render, CGI environment, Unreal Engine look, game cinematic, dramatic rim lighting, theatrical fog, heroic composition, luxury showroom styling, artificial teal-orange grading, over-sharpened HDR, sterile perfection, warped perspective, melted geometry, floating objects, text, watermark, signature',
+    tags: ['naturalistic documentary photography', 'real location', 'available light', 'ordinary materials', 'neutral colour'],
   },
 
   ghibli: {
@@ -235,17 +246,17 @@ export function gateReport(doc, castNames = null) {
     if (['realistic', 'cinematic'].includes(style) && bansPhotorealism) bad.style.push(`${label} 禁了 photorealistic`);
     if (['ghibli', 'inkwash'].includes(style) && !bansPhotorealism) bad.style.push(`${label} 没禁 photorealistic`);
     if (thText(s?.image?.sheet) && !s.image.sheet.includes(preset.render)) bad.style.push(`${label} 的 sheet 缺渲染句`);
-    if (style === 'cinematic') {
+    if (['cinematic', 'naturalistic'].includes(style)) {
       if (thText(s?.image?.prompt) && !s.image.prompt.includes(preset.render)) bad.style.push(`${label} 的 prompt 缺严格实景摄影渲染句`);
       const positive = `${s?.image?.prompt ?? ''} ${s?.image?.sheet ?? ''}`;
       const leaked = positive.match(/semi-realistic|illustration|painterly|visible brush texture|concept art|matte painting|anime|cel shading|toon shading/i);
-      if (leaked) bad.style.push(`${label} 正向提示词混入动画／绘画信号「${leaked[0]}」`);
+      if (leaked) bad.style.push(`${label} 的 ${style} 正向提示词混入动画／绘画信号「${leaked[0]}」`);
       for (const [re, missing] of [
         [/illustration/i, 'illustration'],
         [/concept art|matte painting/i, 'concept art／matte painting'],
         [/anime|cel shading|toon shading/i, 'anime／cel／toon'],
         [/3d render|\bCGI\b|Unreal Engine|game cinematic/i, '3D／CGI／game'],
-      ]) if (!re.test(neg)) bad.style.push(`${label} 的 cinematic negativePrompt 缺「${missing}」禁项`);
+      ]) if (!re.test(neg)) bad.style.push(`${label} 的 ${style} negativePrompt 缺「${missing}」禁项`);
     }
   }
 
@@ -498,7 +509,7 @@ const I18N = {
     langCode: 'en',
     kicker: 'Art Bible',
     docTitle: (s) => `${s} · Art Bible`,
-    styleLine: (id) => `Style: ${({ realistic: 'semi-realistic painterly', cinematic: 'cinematic photorealism', ghibli: 'Ghibli-style animation', inkwash: 'Chinese ink-wash' })[id] ?? id}`,
+    styleLine: (id) => `Style: ${({ realistic: 'semi-realistic painterly', cinematic: 'cinematic photorealism', naturalistic: 'naturalistic reality', ghibli: 'Ghibli-style animation', inkwash: 'Chinese ink-wash' })[id] ?? id}`,
     exportJson: 'Export JSON',
     gates: 'Quality gates',
     gatesPass: 'All passed',

@@ -62,7 +62,7 @@ D:\novels\demo\outline\<剧名>-outline.json 生成角色设定集。
 D:\novels\demo\characters。
 ```
 
-可用画风：`realistic`（半写实厚涂）、`cinematic`（电影级真人写实）、`ghibli`（手绘动画）、`inkwash`（国风水墨）。角色多时先确认主角组的剪影、脸部与服装锚点，再继续配角。产出 `cast.json`、报告、可选 identity 图和完整角色设定图。
+可用画风：`realistic`（半写实厚涂）、`cinematic`（电影级真人写实）、`naturalistic`（现实/纪实风格）、`ghibli`（手绘动画）、`inkwash`（国风水墨）。
 
 ### 3. 做场景与叙事道具
 

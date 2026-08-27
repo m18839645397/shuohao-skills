@@ -1004,6 +1004,20 @@ ok(gate(FIXTURE, 'candidate-grid-selection', CTX).ok && gate(FIXTURE, 'candidate
 }
 {
   const doc = clone(FIXTURE);
+  doc.style = 'naturalistic';
+  for (const ep of doc.episodes) for (const seg of ep.segments) for (const cut of seg.cuts) {
+    cut.frame = cut.frame.replace('cinematic film still', STYLE_PRESETS.naturalistic.phrase);
+  }
+  ok(gate(doc, 'style-phrase').ok, '现实风格分镜统一带 naturalistic live-action 短语时通过');
+  const first = doc.episodes[0].segments[0].cuts[0];
+  const prompt = buildFrameImagePrompt(first, { styleId: 'naturalistic' });
+  ok(prompt.includes(STYLE_PRESETS.naturalistic.guard) && prompt.includes('dramatic rim lighting'), '现实风格终稿带日常观察guard并禁止戏剧化轮廓光');
+  const gridDoc = candidateGridDoc();
+  const grid = buildCandidateGridPrompt(gridDoc.episodes[0].segments[0], 'naturalistic');
+  ok(grid.includes('naturalistic live-action documentary photographic'), '现实风格九宫格使用真人纪实摄影联系表');
+}
+{
+  const doc = clone(FIXTURE);
   doc.style = 'inkwash';
   for (const ep of doc.episodes) {
     for (const seg of ep.segments) {

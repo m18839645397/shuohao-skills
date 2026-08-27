@@ -32,7 +32,7 @@
 | 字段 | 必填 | 说明 |
 | --- | --- | --- |
 | `source` | 是 | 剧名/书名 |
-| `style` | 是 | `realistic` / `cinematic` / `ghibli` / `inkwash`，与 novel-characters 的画风同名对齐（内容是环境版，不带皮肤毛孔那套） |
+| `style` | 是 | `realistic` / `cinematic` / `naturalistic` / `ghibli` / `inkwash`，与角色层同名对齐 |
 | `scenes` | 是 | 场景数组 |
 | `props` | 否 | **叙事道具**数组——只收有特写、跨集、承载剧情的（3–8 件为宜），场景陈设归场景锚点。选法见 `prop-pass.md` |
 

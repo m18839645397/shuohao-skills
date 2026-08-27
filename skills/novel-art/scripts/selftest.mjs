@@ -50,7 +50,7 @@ const gate = (d, id, names = null) => gateReport(d, names).find((g) => g.id === 
 /* ---------------- 画风预设 ---------------- */
 
 eq(DEFAULT_STYLE, 'realistic', '默认半写实');
-for (const id of ['realistic', 'cinematic', 'ghibli', 'inkwash']) ok(SUPPORTED_STYLES.includes(id), `内置 ${id} 预设`);
+for (const id of ['realistic', 'cinematic', 'naturalistic', 'ghibli', 'inkwash']) ok(SUPPORTED_STYLES.includes(id), `内置 ${id} 预设`);
 ok(!/photorealistic/.test(SCENE_STYLE_PRESETS.realistic.negative), 'realistic 不禁 photorealistic');
 ok(!/photorealistic/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 不禁 photorealistic');
 ok(/photorealistic/.test(SCENE_STYLE_PRESETS.ghibli.negative), 'ghibli 必须禁 photorealistic');
@@ -238,6 +238,19 @@ eq(ANCHOR_RANGE.join('-'), '3-5', '锚点范围 3–5');
   const weak = JSON.parse(JSON.stringify(d));
   weak.scenes[0].image.negativePrompt = weak.scenes[0].image.negativePrompt.replace('illustration, ', '');
   ok(gate(weak, 'style-match').detail.includes('illustration'), 'cinematic 场景反向缺插画禁项被拦');
+}
+{
+  const d = clone();
+  const preset = SCENE_STYLE_PRESETS.naturalistic;
+  d.style = 'naturalistic';
+  for (const item of [...d.scenes, ...(d.props ?? [])]) {
+    item.image.prompt = `${preset.render}. ${item.image.prompt}`;
+    item.image.sheet = item.image.sheet.replace(SCENE_STYLE_PRESETS.realistic.render, preset.render);
+    item.image.negativePrompt = `${preset.negative}${d.props.includes(item) ? ', hands, fingers' : ''}`;
+  }
+  ok(gate(d, 'style-match').ok, '现实风格场景／道具纪实摄影合同全部通过');
+  ok(/available daylight|practical light/.test(preset.render), '现实风格使用可用光与实用光源');
+  ok(/theatrical fog|heroic composition/.test(preset.negative), '现实风格禁止戏剧雾与英雄化构图');
 }
 
 /* ---------------- validate 结构检查 ---------------- */

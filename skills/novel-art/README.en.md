@@ -24,7 +24,7 @@ novel-characters → cast.json    (who: character assets)
 novel-art        → art.json     (where & what they hold: art assets)
 ```
 
-`seed <outline.json>` prefills both the scene list and the prop list deterministically, carrying over the episodes each one appears in and the beats it serves; if the outline has no `props`, the prop list is left empty and the model extracts it from the text per `prop-pass.md`. `validate --cast` cross-checks prompts against the character roster. Style presets share names with novel-characters (realistic / cinematic / ghibli / inkwash), environment-flavoured.
+Style presets align with the character layer and now include `naturalistic`: ordinary real locations/objects, available light, neutral colour and non-designed clutter without feature-film polish.
 
 ## CLI
 
@@ -47,6 +47,6 @@ Via codex's built-in `$imagegen`, zero API keys. One 16:9 sheet per scene and pe
 node scripts/selftest.mjs
 ```
 
-171 assertions — seeding, strict live-action cinematic set photography, all 11 gates, rendering and export. No model calls.
+175 assertions — seeding, cinematic and naturalistic location photography, all 11 gates, rendering and export. No model calls.
 
 **Only tested on macOS + Node 24.**

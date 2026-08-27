@@ -47,6 +47,7 @@
 
    - `realistic` 才使用 `Semi-realistic character illustration...`
    - `cinematic` 必须逐字使用预设的 `Live-action casting and costume-continuity photography...`，正向不得出现 illustration / painterly / concept art / anime / cel shading；反向必须禁止插画、动画、3D/CGI、娃娃脸、大眼和美容修图
+   - `naturalistic` 必须逐字使用预设的 `Naturalistic live-action documentary casting photography...`，强调普通真人、日常服装、现实环境、可用光和最低造型干预，并禁止戏剧轮廓光、英雄姿态、奢华造型与大片调色
    - `ghibli` / `inkwash` 使用各自完整预设，不混入摄影皮肤和光学镜头词
 
    **真实感来自不完美，不是细节量。** 皮肤和五官要写具体：可见毛孔、肤色不匀、鼻翼耳缘的细微毛细血管、耳缘透光；眼睛要有湿润高光、下眼睑水光、虹膜纤维；**眼睑和眉毛左右略不对称**；发际线有细碎碎发破开轮廓。老年角色收益最大：老年斑、皮肤松弛，**皱纹要顺着表情肌走**（法令纹、鱼尾纹、抬头纹），不是随机刻线。

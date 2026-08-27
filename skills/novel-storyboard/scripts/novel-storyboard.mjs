@@ -216,8 +216,8 @@ export function buildCandidateGridPrompt(seg, styleId = 'realistic') {
   const cells = Array.isArray(seg?.candidateBoard?.cells) ? seg.candidateBoard.cells : [];
   const style = STYLE_PRESETS[styleId];
   const lines = [
-    styleId === 'cinematic'
-      ? 'Create ONE rough 3-by-3 live-action photographic shot-selection contact sheet on a single 16:9 canvas.'
+    style?.gridLead
+      ? `Create ONE rough 3-by-3 ${style.gridLead} shot-selection contact sheet on a single 16:9 canvas.`
       : 'Create ONE rough 3-by-3 storyboard contact sheet on a single 16:9 canvas.',
     'Exactly nine equal 16:9 panels arranged in three columns and three rows with narrow clean gutters.',
     'This is a low-detail composition board for human selection: prioritize readable staging, shot size, screen direction, prop ownership and action phase over facial or material detail.',
@@ -264,15 +264,25 @@ export function applyCandidateSelection(board, selectionDoc) {
   return next;
 }
 
-/** 分镜图风格预设：与 novel-characters / novel-art 同名对齐（realistic / cinematic / ghibli / inkwash）。
+/** 分镜图风格预设：与 novel-characters / novel-art 同名对齐（realistic / cinematic / naturalistic / ghibli / inkwash）。
  *  短语必须出现在每条分镜图提示词里——同一部剧的分镜图不许画风漂。 */
 export const STYLE_PRESETS = {
   realistic: { zh: '半写实电影感', phrase: 'cinematic film still' },
   cinematic: {
     zh: '电影级真人写实',
+    strictPhoto: true,
+    gridLead: 'feature-film live-action photographic',
     phrase: 'live-action production still',
     guard: 'Strict live-action production photography with real human performers, ordinary anatomical proportions, physical costumes and practical sets, captured through a real cinema lens with subtle sensor grain, natural highlight roll-off, unretouched skin and photographic material response',
     negative: 'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character or environment, Unreal Engine look, game cinematic, beauty retouching, airbrushed skin',
+  },
+  naturalistic: {
+    zh: '现实风格',
+    strictPhoto: true,
+    gridLead: 'naturalistic live-action documentary photographic',
+    phrase: 'naturalistic live-action frame',
+    guard: 'Naturalistic live-action observation with real ordinary people, practical clothing and real existing locations, captured with available daylight or believable practical light, neutral white balance, modest dynamic range, handheld or observational framing, ordinary body proportions and minimal styling',
+    negative: 'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character or environment, Unreal Engine look, game cinematic, glamour portrait, dramatic rim lighting, heroic composition, theatrical fog, luxury styling, beauty retouching, airbrushed skin, artificial teal-orange grading',
   },
   ghibli: { zh: '吉卜力手绘', phrase: 'hand-painted anime film still' },
   inkwash: { zh: '国风水墨', phrase: 'chinese ink-wash cinematic frame' },
@@ -837,7 +847,7 @@ export function gateReport(board, ctx = {}) {
             const prompt = typeof cell.prompt === 'string' ? cell.prompt.trim() : '';
             if (prompt.length < 24) bad.candidate.push(`${sid}.${spec.id}.prompt 太短（至少 24 个英文字符）`);
             if (CJK.test(prompt)) bad.candidate.push(`${sid}.${spec.id}.prompt 必须英文`);
-            if (styleId === 'cinematic') {
+            if (style?.strictPhoto) {
               const leaked = prompt.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
               if (leaked) bad.candidate.push(`${sid}.${spec.id}.prompt 混入动画／绘画信号「${leaked[0]}」`);
             }
@@ -924,9 +934,9 @@ export function gateReport(board, ctx = {}) {
       } else if (!CJK.test(rest)) {
         bad.h3e.push(`${sid} 设定中文提示词（promptLang=${promptLang}），正文却写成了英文`);
       }
-      if (styleId === 'cinematic') {
+      if (style?.strictPhoto) {
         const leaked = rest.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
-        if (leaked) bad.style.push(`${sid} 的 cinematic H3 正文混入动画／绘画信号「${leaked[0]}」`);
+        if (leaked) bad.style.push(`${sid} 的 ${styleId} H3 正文混入动画／绘画信号「${leaked[0]}」`);
       }
 
       const slices = h3CutSlices(h3, cuts.length, promptLang);
@@ -1268,11 +1278,11 @@ export function gateReport(board, ctx = {}) {
         if (style && !imagePrompt.toLowerCase().includes(style.phrase.toLowerCase())) {
           bad.style.push(`${cid} 的分镜图提示词缺风格短语「${style.phrase}」`);
         }
-        if (styleId === 'cinematic' && style) {
+        if (style?.strictPhoto) {
           const leaked = frame.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
-          if (leaked) bad.style.push(`${cid} 的 cinematic frame 混入动画／绘画信号「${leaked[0]}」`);
+          if (leaked) bad.style.push(`${cid} 的 ${styleId} frame 混入动画／绘画信号「${leaked[0]}」`);
           if (!imagePrompt.includes(style.guard) || !imagePrompt.includes(style.negative)) {
-            bad.style.push(`${cid} 的完整 cinematic imagePrompt 缺严格真人摄影 guard／negative`);
+            bad.style.push(`${cid} 的完整 ${styleId} imagePrompt 缺严格真人摄影 guard／negative`);
           }
         }
         for (const name of banned) {

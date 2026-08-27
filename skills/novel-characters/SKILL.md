@@ -1,13 +1,13 @@
 ---
 name: novel-characters
-version: 2.1.0
+version: 2.2.0
 description: |
   从小说或短故事里拆出角色表、人物画像、形象提示词、音色提示词，
   并给每个角色出角色设定图（左半身像 + 右全身三视图 + 细节条），产出 JSON + Markdown + 可交互的 report.html。
   新流程先做群像视觉矩阵，按 protagonist/major/supporting/minor 分配签名锚点；重要角色先锁身份再展开三视图，
   避免主配角都成为只有年龄、服装颜色不同的路人。
   报告语言可指定（--lang），默认中文，任意语言都支持；
-  出图风格可指定（--style），默认半写实，也可以出电影级真人写实、吉卜力动画风或国风水墨。
+  出图风格可指定（--style），支持半写实、电影级真人、现实/纪实、吉卜力动画和国风水墨。
   零依赖、零 API key，用当前会话额度；出图走 codex 内置 $imagegen（可选）。
   Use when asked to 拆小说角色、分析人物、生成角色卡、character sheets from a novel。
 allowed-tools:
@@ -70,7 +70,7 @@ metadata:
 
 ### Step 0.5 — 确定画风
 
-用户可以指定出图风格：**默认 `realistic`**（半写实厚涂），电影级真人写实用 `cinematic`，动画质感用 `ghibli`（吉卜力式手绘赛璐璐），国风水墨用 `inkwash`。
+用户可以指定出图风格：默认 `realistic`（半写实厚涂）；`cinematic` 是剧情片级真人摄影；`naturalistic` 是现实/纪实风格，使用普通真人、现实环境、可用光、中性色与最低造型干预；另有 `ghibli`、`inkwash`。
 
 ```bash
 node {baseDir}/scripts/novel-characters.mjs styles   # 打印预设的完整内容
@@ -303,7 +303,7 @@ report.html 的样式约定见 `{baseDir}/references/report-style.md`——要�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-397 项断言，不调模型、不花额度，覆盖群像身份、严格 cinematic 摄影合同、screen-test、合成、校验与渲染。改完脚本先跑这个。
+408 项断言，不调模型、不花额度，覆盖群像身份、cinematic、naturalistic、screen-test、合成、校验与渲染。改完脚本先跑这个。
 
 ## 自测夹具
 

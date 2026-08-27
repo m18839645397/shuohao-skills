@@ -244,6 +244,19 @@ export const STYLE_PRESETS = {
     tags: ['live-action casting photography', 'costume continuity', 'cinema-camera portrait', 'unretouched natural skin', 'filmic colour'],
   },
 
+  naturalistic: {
+    label: { zh: '现实风格', en: 'Naturalistic reality', ja: 'ナチュラリスティック・リアリティ' },
+    render:
+      'Naturalistic live-action documentary casting photography of a real person in an ordinary real-world environment, captured with available or practical light, neutral white balance, modest dynamic range, observational framing and minimal styling',
+    surface:
+      'Unretouched everyday skin with localized pores, uneven oil and dry zones, small blemishes, faint capillaries and ordinary age or fatigue; anatomically normal eyes and teeth; naturally imperfect hair; practical lived-in clothing with irregular lint, wrinkles, repairs, compressed seams and non-repeating wear; ordinary non-model-perfect body proportions',
+    lighting:
+      'LIGHTING IN THE LEFT ZONE ONLY: soft available window light, overcast daylight or a believable practical lamp with no beauty key, rim light or glamour fill. LIGHTING IN THE RIGHT ZONES: neutral documentary wardrobe-reference lighting with natural floor contact and no theatrical modelling',
+    negative:
+      'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character, Unreal Engine look, game cinematic, glamour portrait, beauty campaign, beauty-filter smoothing, airbrushed skin, dramatic rim lighting, heroic pose, luxury styling, theatrical costume, artificial teal-orange grading, over-sharpened HDR, plastic or waxy skin, stiff mannequin posing, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
+    tags: ['naturalistic live action', 'documentary casting', 'available light', 'ordinary real person', 'neutral colour'],
+  },
+
   ghibli: {
     label: { zh: '吉卜力动画', en: 'Ghibli-like animation', ja: 'ジブリ風アニメ' },
     render:
@@ -966,20 +979,20 @@ export function validateCast(
       if (typeof image.sheet === 'string' && !image.sheet.includes(preset.render)) {
         at(name, `image.sheet 里没有 style=${style} 的渲染句，画风会飘`);
       }
-      if (style === 'cinematic') {
+      if (['cinematic', 'naturalistic'].includes(style)) {
         if (typeof image.prompt === 'string' && !image.prompt.includes(preset.render)) {
-          at(name, 'cinematic 的 image.prompt 必须逐字包含严格真人摄影 render 句');
+          at(name, `${style} 的 image.prompt 必须逐字包含严格真人摄影 render 句`);
         }
         const positive = `${image.prompt ?? ''} ${image.sheet ?? ''}`;
         const leaked = positive.match(/semi-realistic|illustration|painterly|visible brush texture|concept art|anime|manga|cel shading|toon shading/i);
-        if (leaked) at(name, `cinematic 正向提示词混入动画／绘画信号「${leaked[0]}」`);
+        if (leaked) at(name, `${style} 正向提示词混入动画／绘画信号「${leaked[0]}」`);
         for (const [re, label] of [
           [/illustration/i, 'illustration'],
           [/anime|cel shading|toon shading/i, 'anime／cel／toon'],
           [/3d render|\bCGI\b|Unreal Engine|game cinematic/i, '3D／CGI／game'],
           [/oversized eyes|porcelain doll face|fashion-doll proportions/i, '娃娃脸／大眼／玩偶比例'],
         ]) {
-          if (!re.test(neg)) at(name, `cinematic negativePrompt 缺「${label}」禁项`);
+          if (!re.test(neg)) at(name, `${style} negativePrompt 缺「${label}」禁项`);
         }
       }
     }

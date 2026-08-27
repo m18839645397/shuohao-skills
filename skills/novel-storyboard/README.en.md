@@ -50,7 +50,7 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | **Production prompt richness** | six visual-plan layers per cut, four soundscape layers per segment and four scored-music layers appear verbatim in the correct H3 fields with language-aware minimum detail; no music is explicit N/A/无 |
 | **Adaptive frame density** | `framePlan` assigns sparse / balanced / rich content budgets by establishing / dialogue / reaction / action / reveal / insert / atmosphere role; structured counts, sensible role pairings and the compiled image prompt are audited deterministically |
 | **Cut and segment continuity** | eight end/start state fields match across adjacent cuts; cut point, motion, light, audio and axis bridges enter the right fields; continuous segments audit state and handoff while explicit scene/time jumps may break it |
-| **Style phrase** | the `style` preset's English phrase (realistic / cinematic / ghibli / inkwash, name-aligned with the character and art skills) must appear in every frame prompt — one drama, one look |
+| **Style phrase** | realistic / cinematic / naturalistic / ghibli / inkwash stay name-aligned across the pipeline; naturalistic uses ordinary people, real locations, available light and observational framing |
 | Frame-prompt hygiene | English-only, non-empty |
 | No character names | frame prompts always; the H3 prompt only in English mode (Chinese prompts allow names — identity is anchored by the frames). Checked with `--outline` / `--cast`; skipping is **announced** |
 | Reference integrity | scene index / characters / props all audited against the script scene |
@@ -131,7 +131,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-385 assertions — strict live-action cinematic contracts, rough grids, human selection, edge plans, entry frames, state chains and all twenty-three gates. No model calls.
+388 assertions — cinematic and naturalistic live action, rough grids, human selection, edge plans, entry frames and all twenty-three gates. No model calls.
 
 The bundled `examples/渡口-storyboard.json` remains the complete legacy-compatibility fixture for rhythm, alignment and recipes. New adaptive frame structure is demonstrated in `references/frame-density.md` and exercised by the selftest fixtures.
 

@@ -899,7 +899,7 @@ ok(
 
 /* ---------------- 画风预设 ---------------- */
 
-for (const id of ['realistic', 'cinematic', 'ghibli', 'inkwash']) ok(SUPPORTED_STYLES.includes(id), `内置 ${id} 预设`);
+for (const id of ['realistic', 'cinematic', 'naturalistic', 'ghibli', 'inkwash']) ok(SUPPORTED_STYLES.includes(id), `内置 ${id} 预设`);
 eq(stylePreset('nope').render, STYLE_PRESETS.realistic.render, '未知风格退回默认');
 // 每个预设都要五块齐全，缺一块就会跟另一个预设混搭出四不像
 for (const [id, p] of Object.entries(STYLE_PRESETS)) {
@@ -941,6 +941,23 @@ ok(STYLE_PRESETS.realistic.surface !== STYLE_PRESETS.ghibli.surface, '写实与�
   const weakNegative = JSON.parse(JSON.stringify(cinematic));
   weakNegative[0].image.negativePrompt = weakNegative[0].image.negativePrompt.replace('illustration, ', '');
   ok(validateCast(weakNegative, SOURCE, 'zh', 'cinematic').some((x) => x.includes('illustration')), 'cinematic 反向词缺插画禁项被拦');
+}
+
+// naturalistic 是日常纪实现实风格，不使用大片级精致布光与英雄化造型
+{
+  const naturalistic = clone();
+  const preset = STYLE_PRESETS.naturalistic;
+  for (const c of naturalistic) {
+    c.image.style = '现实风格';
+    c.image.prompt = `${preset.render}. ${c.image.prompt}`;
+    c.image.sheet = c.image.sheet.replace(STYLE_PRESETS.realistic.render, preset.render);
+    c.image.negativePrompt = preset.negative;
+  }
+  eq(validateCast(naturalistic, SOURCE, 'zh', 'naturalistic').length, 0, '现实风格真人纪实合同全部通过');
+  ok(/available or practical light/.test(preset.render) && /dramatic rim lighting/.test(preset.negative), '现实风格使用现场光并禁止戏剧化轮廓光');
+  ok(/ordinary real person/.test(preset.tags.join(' ')), '现实风格标签强调普通真人');
+  const screen = buildScreenTestPrompt(naturalistic[0], 'naturalistic');
+  ok(screen.includes(preset.render) && screen.includes('ONE single-frame live-action casting'), '现实风格可生成单帧真人screen-test');
 }
 
 // 校验器要能抓住风格与反向提示词搞反

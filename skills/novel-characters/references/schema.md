@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | `source` | 是 | 书名/篇名，报告标题用 |
 | `lang` | 是 | 报告语言，默认 `zh` |
-| `style` | 是 | 出图风格，默认 `realistic`；`cinematic` 是电影级真人写实，`ghibli` 是吉卜力动画风，`inkwash` 是国风水墨。见 `style-presets.md` |
+| `style` | 是 | `realistic` 半写实、`cinematic` 电影真人、`naturalistic` 现实纪实、`ghibli` 动画、`inkwash` 水墨。见 `style-presets.md` |
 | `designMode` | 是 | 固定为 `ensemble-signature`；缺失时 validate 直接报错 |
 | `designPrinciple` | designMode 时是 | 本剧群像共同遵守的现实程度、形状语言与对照原则，使用报告语言 |
 | `ui` | 视情况 | 界面文案翻译。`lang` 是 `zh`/`en`/`ja` 时**不需要**（内置）；其他任何语言**必填**，否则 `validate` 报错。用 `ui-template <lang>` 生成骨架后翻译。只覆盖部分键也可以，缺的用内置英文兜底 |
