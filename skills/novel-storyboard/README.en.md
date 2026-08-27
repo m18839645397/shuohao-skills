@@ -20,6 +20,7 @@ segment = one video-generation call, new seeds default to 5–10s, never crosses
 - **Storyboard frames receive role-driven visual density** — `framePlanMode: "adaptive-density"` selects sparse / balanced / rich by shot function; reports and export deterministically compile the full image prompt instead of sending the thin base `frame` to the image model
 - **Every segment starts from a true initial frame** — `frameEntryMode: "start-boundary"` forces f1 to show the pre-action entry state; motion begins only after 0.00s and later sub-frames may carry impact/result moments
 - **One rough grid, then human shot selection** — `candidateMode: "single-grid-rough"` uses one image call per segment; the report exports click-order selection.json, selected cells are regenerated in detail, and edgePlans own their transitions
+- **Strict live-action cinematic** — both rough grids and final frames require real performers, physical costumes/sets, optical lens and sensor response while rejecting illustration, concept art, anime/cel and 3D/CGI/game signals
 - **Adjacent shots share one exact state boundary** — `continuityMode: "state-linked"` audits eight start/end state fields, five transition-plan bridges and continuous-segment handoffs; Shot 2 first continues the same instant before changing composition
 - **Inherit the drama before designing the camera** — when the script enables state linking, every cut copies its claimed first/last beat into `sourceState.before/after`; the cross-layer gate blocks a storyboard that is internally consistent but not faithful to the script
 - **Frames are asset composition, not invention** — generation feeds the scene / character / prop sheets as references; with codex installed the frames are actually generated (optional)
@@ -130,7 +131,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-379 assertions — beat expansion, rough nine-cell grids, human selection write-back, edge plans, H3 skeletons, entry frames, adaptive density, state chains and all twenty-three gate-defeating cases. No model calls, runs in about a second.
+385 assertions — strict live-action cinematic contracts, rough grids, human selection, edge plans, entry frames, state chains and all twenty-three gates. No model calls.
 
 The bundled `examples/渡口-storyboard.json` remains the complete legacy-compatibility fixture for rhythm, alignment and recipes. New adaptive frame structure is demonstrated in `references/frame-density.md` and exercised by the selftest fixtures.
 

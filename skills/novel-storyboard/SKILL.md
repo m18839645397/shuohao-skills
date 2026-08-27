@@ -1,6 +1,6 @@
 ---
 name: novel-storyboard
-version: 1.12.0
+version: 1.13.0
 description: |
   给 AI 短剧出分镜：三层结构——段（新 seed 默认 5–10 秒，一次视频生成）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
@@ -125,6 +125,7 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
 
 - **没有 codex 就整步跳过**，只交提示词，报告显示占位不装有
 - **参考图是命根子**：`-i` 挂上该段场景设定图（该光照状态）+ 画内角色的设定图 + 涉及道具的设定图，提示词只负责取景和此刻的姿态
+- `cinematic` 优先挂角色 `screen-test.png`、场景/道具 `master.png` 单帧；不要把白底三视图或 L 形技术 sheet 当成唯一真人镜头参考
 - **f1 不是动作代表帧**：它必须画 startState 的动作前入口态；奔跑、拍击、转身、开门等动作从0.00秒之后开始
 - **九宫格只做粗选**：每段先生成一张 `candidate-grid.png`；图片里不画编号，报告叠加 G1–G9。选中格子必须分别重生成高清 f1..fN
 - **链式参考也是硬要求**：f2 起额外挂本段 f1 + 立即上一切；连续段的下一段 f1 再挂上一段最后一帧。标准资产始终保留，防止链式漂移
@@ -204,7 +205,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-379 项断言，不调模型、不花额度。23 道质量门每一道都有击穿用例。改完脚本先跑这个。
+385 项断言，不调模型、不花额度。23 道门包含严格 cinematic 真人摄影、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
 
 ## 自带样例
 

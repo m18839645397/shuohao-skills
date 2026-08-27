@@ -12,6 +12,8 @@
 
 每段先用**一次** imagegen 调用生成一张低细节3×3候选图。粗图只负责构图、动作阶段和空间方向，允许脸、手和材质不精细。人工按播放顺序选 N 格后，再分别生成 N 张高清终稿。
 
+`cinematic` 的粗图仍必须是 `rough live-action photographic shot-selection contact sheet`：真人演员、实体服装、实景/搭景和光学镜头语义。粗糙指细节少，不代表可以变成手绘分镜、概念图或动画草稿。
+
 ## 固定九格
 
 |  | wide | medium | close |

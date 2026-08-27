@@ -234,14 +234,14 @@ export const STYLE_PRESETS = {
   cinematic: {
     label: { zh: '电影级真人写实', en: 'Cinematic photorealism', ja: '映画級フォトリアル' },
     render:
-      'Cinematic live-action character design sheet with feature-film photorealism, physically grounded anatomy, natural lens response, subtle depth and restrained filmic colour grading',
+      'Live-action casting and costume-continuity photography of a real human performer, captured with a cinema camera and real optical lens rendering, physically ordinary human anatomy, subtle sensor grain, natural highlight roll-off and restrained feature-film colour grading',
     surface:
-      'Authentic skin with visible pores, fine vellus hair, uneven tone and subtle subsurface response; eyes with natural moisture, layered iris detail and catchlights shaped by the key light; individual hair strands with believable density and flyaways; wardrobe built from production-ready fabrics with visible weave, seams, wear, weight and realistic fold behaviour',
+      'Unretouched natural skin with irregular pores, fine vellus hair, uneven tone, small blemishes and non-uniform subsurface response; anatomically normal eyes with restrained catchlights and no enlargement; naturally imperfect hair density and flyaways; production-made wardrobe with real weave, seams, wear, weight and gravity-driven folds; no synthetic surface regularity',
     lighting:
-      'LIGHTING IN THE LEFT ZONE ONLY: motivated feature-film portrait lighting with a large soft key, controlled negative fill, a subtle edge light and natural falloff that preserves highlight and shadow detail. LIGHTING IN THE RIGHT ZONES: neutral flat orthographic studio lighting with no dramatic key or cast shadows, keeping the turnaround measurable and cleanly cut out',
+      'LIGHTING IN THE LEFT ZONE ONLY: unretouched live-action casting portrait lighting with a large soft key, controlled negative fill, natural falloff and realistic optical depth. LIGHTING IN THE RIGHT ZONES: neutral photographic wardrobe-fitting lighting with no beauty key, no glamour fill and no cast shadows, preserving measurable body and costume continuity',
     negative:
-      'plastic or waxy skin, beauty-filter smoothing, uncanny synthetic face, game-engine sheen, over-sharpened HDR, crushed blacks, clipped highlights, artificial teal-orange grading, glamour retouching, stiff mannequin posing, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
-    tags: ['cinematic photorealism', 'live-action character sheet', 'feature-film lighting', 'natural skin', 'filmic colour'],
+      'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character, Unreal Engine look, game cinematic, plastic or waxy skin, beauty-filter smoothing, airbrushed skin, glamour retouching, uncanny synthetic face, over-sharpened HDR, crushed blacks, clipped highlights, artificial teal-orange grading, stiff mannequin posing, extra fingers, malformed hands, text, watermark, signature, busy or patterned background',
+    tags: ['live-action casting photography', 'costume continuity', 'cinema-camera portrait', 'unretouched natural skin', 'filmic colour'],
   },
 
   ghibli: {
@@ -610,6 +610,27 @@ export function buildIdentityPrompt(character, style = DEFAULT_STYLE) {
   ].filter(Boolean).join('\n');
 }
 
+/** 下游分镜使用的单帧真人定妆参考；避免把白底三视图版式传给最终镜头。 */
+export function buildScreenTestPrompt(character, style = DEFAULT_STYLE) {
+  const preset = stylePreset(style);
+  const anchors = (character?.visualIdentity?.anchors ?? [])
+    .filter((a) => typeof a?.prompt === 'string' && a.prompt.trim())
+    .map((a) => `- ${a.prompt.trim()}`)
+    .join('\n');
+  return [
+    'Create ONE single-frame live-action casting and wardrobe screen test, not a model sheet, not a turnaround and not a multi-panel layout.',
+    'Show one real human performer in a relaxed natural standing pose, three-quarter full-body framing against a neutral grey practical studio background.',
+    `Use the identity, ethnicity, era, region, anatomy and costume facts from this source-grounded description: ${String(character?.image?.prompt ?? '').trim()}`,
+    'Mandatory identity anchors:',
+    anchors,
+    preset.render,
+    preset.surface,
+    'Use realistic optical depth, subtle sensor grain, natural highlight roll-off and unretouched skin. Keep ordinary human eye size, facial asymmetry and non-model-perfect body proportions.',
+    `Avoid: ${preset.negative}.`,
+    'No text, labels, watermark, borders, extra people or contact-sheet panels.',
+  ].filter(Boolean).join('\n');
+}
+
 /**
  * @param characters 角色卡数组
  * @param sourceText 原文；null 则跳过逐字引文校验
@@ -934,16 +955,32 @@ export function validateCast(
     // 写实与非写实预设的反向提示词几乎是相反的，搞反了整批图都毁。
     if (image && SUPPORTED_STYLES.includes(style)) {
       const neg = typeof image.negativePrompt === 'string' ? image.negativePrompt : '';
-      const bansRealism = /photorealistic|3d render/i.test(neg);
-      if (['realistic', 'cinematic'].includes(style) && bansRealism) {
-        at(name, `style=${style} 却在 negativePrompt 里禁 photorealistic／3d render——自相矛盾`);
+      const bansPhotorealism = /photorealistic/i.test(neg);
+      if (['realistic', 'cinematic'].includes(style) && bansPhotorealism) {
+        at(name, `style=${style} 却在 negativePrompt 里禁 photorealistic——自相矛盾`);
       }
-      if (['ghibli', 'inkwash'].includes(style) && !bansRealism) {
+      if (['ghibli', 'inkwash'].includes(style) && !/photorealistic/i.test(neg)) {
         at(name, `style=${style} 的 negativePrompt 必须禁 photorealistic／3d render`);
       }
       const preset = stylePreset(style);
       if (typeof image.sheet === 'string' && !image.sheet.includes(preset.render)) {
         at(name, `image.sheet 里没有 style=${style} 的渲染句，画风会飘`);
+      }
+      if (style === 'cinematic') {
+        if (typeof image.prompt === 'string' && !image.prompt.includes(preset.render)) {
+          at(name, 'cinematic 的 image.prompt 必须逐字包含严格真人摄影 render 句');
+        }
+        const positive = `${image.prompt ?? ''} ${image.sheet ?? ''}`;
+        const leaked = positive.match(/semi-realistic|illustration|painterly|visible brush texture|concept art|anime|manga|cel shading|toon shading/i);
+        if (leaked) at(name, `cinematic 正向提示词混入动画／绘画信号「${leaked[0]}」`);
+        for (const [re, label] of [
+          [/illustration/i, 'illustration'],
+          [/anime|cel shading|toon shading/i, 'anime／cel／toon'],
+          [/3d render|\bCGI\b|Unreal Engine|game cinematic/i, '3D／CGI／game'],
+          [/oversized eyes|porcelain doll face|fashion-doll proportions/i, '娃娃脸／大眼／玩偶比例'],
+        ]) {
+          if (!re.test(neg)) at(name, `cinematic negativePrompt 缺「${label}」禁项`);
+        }
       }
     }
 
@@ -1987,6 +2024,7 @@ const USAGE = `novel-characters.mjs — novel-characters skill 的确定性工�
         [--design design-matrix.json] 群像视觉矩阵（默认自动找 <workdir>/design-matrix.json）
   validate <cast.json> <book.txt>  校验；有违规逐条打印并 exit 1
   identity-prompt <cast.json> <角色名或 id>  打印重要角色身份锁定图提示词
+  screen-test-prompt <cast.json> <角色名或 id> 打印下游分镜用真人定妆单帧提示词
   render <cast.json> [--html|--md] 渲染报告到 stdout（默认 --md）
   slug <name>                      角色名转安全文件名
   ui-template [lang]               打印界面文案骨架，供翻译成内置表没有的语言
@@ -2215,6 +2253,18 @@ function main(argv) {
     const prompt = buildIdentityPrompt(character, cast.style);
     if (!prompt) throw new Error(`${character.name} 缺 visualIdentity，无法生成身份锁定图提示词`);
     process.stdout.write(prompt + '\n');
+    return;
+  }
+
+  if (cmd === 'screen-test-prompt') {
+    const [castPath, target] = rest;
+    if (!castPath || !target) throw new Error('用法：screen-test-prompt <cast.json> <角色名或 id>');
+    const cast = loadCast(castPath);
+    const key = String(target).trim().toLowerCase();
+    const character = cast.characters.find((c) => [c?.id, c?.name, ...(c?.aliases ?? [])]
+      .some((x) => typeof x === 'string' && x.trim().toLowerCase() === key));
+    if (!character) throw new Error(`找不到角色「${target}」`);
+    process.stdout.write(buildScreenTestPrompt(character, cast.style) + '\n');
     return;
   }
 

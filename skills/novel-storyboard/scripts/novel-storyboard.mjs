@@ -155,10 +155,13 @@ const FRAME_DENSITY_INSTRUCTIONS = {
  * 单切结构化 framePlan → 真正交给 imagegen 的完整英文提示词。
  * 旧 JSON 没有 framePlan 时原样返回 cut.frame，保证兼容；新模式由质量门保证结构完整。
  */
-export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = false } = {}) {
+export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = false, styleId = 'realistic' } = {}) {
   const base = String(cut?.frame ?? '').trim();
   const plan = cut?.framePlan;
-  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return base;
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    const style = STYLE_PRESETS[styleId];
+    return [style?.guard, base, style?.negative ? `Strict style exclusions: ${style.negative}.` : ''].filter(Boolean).join('\n');
+  }
 
   const list = (field) => Array.isArray(plan[field])
     ? plan[field].filter(hasText).map((x) => String(x).trim())
@@ -172,6 +175,8 @@ export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = f
   if ((cut?.props ?? []).length) {
     lines.push('Match every narrative prop exactly to the attached prop reference images.');
   }
+  const style = STYLE_PRESETS[styleId];
+  if (style?.guard) lines.push(style.guard);
   lines.push(FRAME_DENSITY_INSTRUCTIONS[plan.density] ?? 'Keep the composition narratively clear and controlled.');
   if (plan.moment === 'entry') {
     lines.push('This is the exact action-entry state at 0.00 seconds; motion begins only after this still frame.');
@@ -201,26 +206,32 @@ export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = f
     lines.push('Preserve the exact subject pose, position, screen direction, prop state, light level and physical event from the previous-segment final-frame reference. Continue from the same instant; change only the shot size and camera composition required by this frame.');
   }
   if (exclude.length) lines.push(`Do not add: ${exclude.join('; ')}.`);
+  if (style?.negative) lines.push(`Strict style exclusions: ${style.negative}.`);
   lines.push('No text, no watermark, no borders — a single clean full-bleed 16:9 frame.');
   return lines.join('\n');
 }
 
 /** 一次 imagegen 调用使用的粗略九宫格提示词；编号由报告叠加，不让图像模型画字。 */
-export function buildCandidateGridPrompt(seg) {
+export function buildCandidateGridPrompt(seg, styleId = 'realistic') {
   const cells = Array.isArray(seg?.candidateBoard?.cells) ? seg.candidateBoard.cells : [];
+  const style = STYLE_PRESETS[styleId];
   const lines = [
-    'Create ONE rough 3-by-3 storyboard contact sheet on a single 16:9 canvas.',
+    styleId === 'cinematic'
+      ? 'Create ONE rough 3-by-3 live-action photographic shot-selection contact sheet on a single 16:9 canvas.'
+      : 'Create ONE rough 3-by-3 storyboard contact sheet on a single 16:9 canvas.',
     'Exactly nine equal 16:9 panels arranged in three columns and three rows with narrow clean gutters.',
     'This is a low-detail composition board for human selection: prioritize readable staging, shot size, screen direction, prop ownership and action phase over facial or material detail.',
     'Use the attached environment, character and prop references as rough identity and continuity standards; do not spend detail budget on polish.',
     'Keep the same characters, costume blocks, location geometry, lighting direction and narrative props consistent across all nine panels.',
     'Row 1 is the pre-action entry state; row 2 is action development; row 3 is the visible result or exit state.',
   ];
+  if (style?.guard) lines.push(style.guard);
   for (const spec of CANDIDATE_GRID_SPEC) {
     const cell = cells.find((x) => x?.id === spec.id);
     lines.push(`[Cell ${spec.id} — ${spec.moment} / ${spec.size}] ${String(cell?.prompt ?? '').trim()}`);
   }
   lines.push('Do not draw cell numbers, captions, text, watermark or decorative borders inside the image; the review report overlays G1–G9 labels deterministically.');
+  if (style?.negative) lines.push(`Strict style exclusions: ${style.negative}.`);
   if (seg?.id) lines.push(`Copy the final selected image to ./${seg.id}/candidate-grid.png.`);
   return lines.join('\n');
 }
@@ -257,7 +268,12 @@ export function applyCandidateSelection(board, selectionDoc) {
  *  短语必须出现在每条分镜图提示词里——同一部剧的分镜图不许画风漂。 */
 export const STYLE_PRESETS = {
   realistic: { zh: '半写实电影感', phrase: 'cinematic film still' },
-  cinematic: { zh: '电影级真人写实', phrase: 'photorealistic feature-film frame' },
+  cinematic: {
+    zh: '电影级真人写实',
+    phrase: 'live-action production still',
+    guard: 'Strict live-action production photography with real human performers, ordinary anatomical proportions, physical costumes and practical sets, captured through a real cinema lens with subtle sensor grain, natural highlight roll-off, unretouched skin and photographic material response',
+    negative: 'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character or environment, Unreal Engine look, game cinematic, beauty retouching, airbrushed skin',
+  },
   ghibli: { zh: '吉卜力手绘', phrase: 'hand-painted anime film still' },
   inkwash: { zh: '国风水墨', phrase: 'chinese ink-wash cinematic frame' },
 };
@@ -821,6 +837,10 @@ export function gateReport(board, ctx = {}) {
             const prompt = typeof cell.prompt === 'string' ? cell.prompt.trim() : '';
             if (prompt.length < 24) bad.candidate.push(`${sid}.${spec.id}.prompt 太短（至少 24 个英文字符）`);
             if (CJK.test(prompt)) bad.candidate.push(`${sid}.${spec.id}.prompt 必须英文`);
+            if (styleId === 'cinematic') {
+              const leaked = prompt.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
+              if (leaked) bad.candidate.push(`${sid}.${spec.id}.prompt 混入动画／绘画信号「${leaked[0]}」`);
+            }
             for (const name of banned) if (prompt.includes(name)) bad.candidate.push(`${sid}.${spec.id}.prompt 出现角色名「${name}」`);
           }
           const selected = Array.isArray(boardPlan.selected) ? boardPlan.selected : [];
@@ -903,6 +923,10 @@ export function gateReport(board, ctx = {}) {
         }
       } else if (!CJK.test(rest)) {
         bad.h3e.push(`${sid} 设定中文提示词（promptLang=${promptLang}），正文却写成了英文`);
+      }
+      if (styleId === 'cinematic') {
+        const leaked = rest.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
+        if (leaked) bad.style.push(`${sid} 的 cinematic H3 正文混入动画／绘画信号「${leaked[0]}」`);
       }
 
       const slices = h3CutSlices(h3, cuts.length, promptLang);
@@ -1237,11 +1261,19 @@ export function gateReport(board, ctx = {}) {
         const imagePrompt = buildFrameImagePrompt(cut, {
           cutIndex: ci,
           segmentContinuous: ci === 0 && seg?.handoff?.kind === 'continuous',
+          styleId,
         });
         if (!frame.trim()) bad.english.push(`${cid} 的分镜图提示词为空`);
         if (CJK.test(imagePrompt)) bad.english.push(`${cid} 的完整分镜图提示词混入了非英文`);
         if (style && !imagePrompt.toLowerCase().includes(style.phrase.toLowerCase())) {
           bad.style.push(`${cid} 的分镜图提示词缺风格短语「${style.phrase}」`);
+        }
+        if (styleId === 'cinematic' && style) {
+          const leaked = frame.match(/semi-realistic|illustration|painterly|concept art|anime|manga|cel shading|toon shading/i);
+          if (leaked) bad.style.push(`${cid} 的 cinematic frame 混入动画／绘画信号「${leaked[0]}」`);
+          if (!imagePrompt.includes(style.guard) || !imagePrompt.includes(style.negative)) {
+            bad.style.push(`${cid} 的完整 cinematic imagePrompt 缺严格真人摄影 guard／negative`);
+          }
         }
         for (const name of banned) {
           if (imagePrompt.includes(name)) bad.names.push(`${cid} 的完整分镜图提示词出现角色名「${name}」`);
@@ -1579,7 +1611,7 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
         const candidatePromptPath = `${prefix}${seg.id}/candidate-grid.prompt.md`;
         const candidateImagePath = `${prefix}${seg.id}/candidate-grid.png`;
         const selectionPath = `${prefix}${seg.id}/candidate-selection.template.json`;
-        files.push({ path: candidatePromptPath, content: `# ${seg.id} · 粗略九宫格提示词\n\n${buildCandidateGridPrompt(seg)}\n` });
+        files.push({ path: candidatePromptPath, content: `# ${seg.id} · 粗略九宫格提示词\n\n${buildCandidateGridPrompt(seg, board?.style ?? DEFAULT_STYLE)}\n` });
         files.push({
           path: selectionPath,
           content: JSON.stringify({ mode: SELECTION_MODE, selections: [{ segment: seg.id, selected: seg.candidateBoard.selected ?? [] }] }, null, 2) + '\n',
@@ -1597,6 +1629,7 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
         const prompt = buildFrameImagePrompt(cut, {
           cutIndex: i,
           segmentContinuous: i === 0 && seg?.handoff?.kind === 'continuous',
+          styleId: board?.style ?? DEFAULT_STYLE,
         });
         files.push({
           path,
@@ -2022,7 +2055,7 @@ export function renderHtml(board, ctx = {}) {
           const has = (ci) => (ctx.imageExists ? ctx.imageExists(frame(ci)) : false);
           const candidatePath = `${seg.id}/candidate-grid.png`;
           const hasCandidate = Boolean(seg?.candidateBoard && ctx.imageExists && ctx.imageExists(candidatePath));
-          const candidatePrompt = seg?.candidateBoard ? buildCandidateGridPrompt(seg) : '';
+          const candidatePrompt = seg?.candidateBoard ? buildCandidateGridPrompt(seg, board?.style ?? DEFAULT_STYLE) : '';
           const candidatePanel = seg?.candidateBoard
             ? `<section class="cand" data-segment="${esc(seg.id)}" data-initial="${esc((seg.candidateBoard.selected ?? []).join(','))}">
   <header class="cand-h"><div><b>${esc(t.candidateTitle)}</b><small>${esc(t.candidateHint)}</small></div><button class="cand-clear">${esc(t.clearSelection)}</button></header>
@@ -2052,6 +2085,7 @@ export function renderHtml(board, ctx = {}) {
                 const imagePrompt = buildFrameImagePrompt(cut, {
                   cutIndex: ci,
                   segmentContinuous: ci === 0 && seg?.handoff?.kind === 'continuous',
+                  styleId: board?.style ?? DEFAULT_STYLE,
                 });
                 const body = has(ci)
                   ? `<img class="frame" src="${esc(frame(ci))}" alt="${esc(`${seg.id}#${ci + 1}`)}" loading="lazy">`
@@ -2079,6 +2113,7 @@ export function renderHtml(board, ctx = {}) {
               const imagePrompt = buildFrameImagePrompt(cut, {
                 cutIndex: ci,
                 segmentContinuous: ci === 0 && seg?.handoff?.kind === 'continuous',
+                styleId: board?.style ?? DEFAULT_STYLE,
               });
               return `<li class="cut">
   <div class="cut-h">

@@ -35,6 +35,16 @@
 
 身份锁定图和完整 sheet 都必须落实 `visualIdentity.anchors`。锚点负责“这个人是谁”，风格预设只负责“这部片怎么画”，不要混成一层。
 
+## cinematic 下游使用 screen-test
+
+完整 sheet 是白底、多面板、平光技术资料，不能作为分镜唯一参考。`cinematic` 为每个会进入分镜的角色另生成单帧真人定妆参考：
+
+```bash
+node scripts/novel-characters.mjs screen-test-prompt <cast.json> <角色名或 id>
+```
+
+输出保存为 `images/<slug>-screen-test.png`：一个真人演员、单帧、自然站姿、灰色实拍棚背景、真实光学景深，无三视图、无边框、无细节格。storyboard 优先挂 screen-test；sheet 只辅助服装背面、比例和细节核对。
+
 ---
 
 ## 情况 A：本 skill 正跑在 codex 里

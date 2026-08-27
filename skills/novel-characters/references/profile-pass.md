@@ -43,16 +43,17 @@
 
    推断出来的内容按第 1 条标注在 `persona.appearance` / `persona.identity` 里；**提示词里不标注**——那是给机器读的，`(inferred)` 混进去会被画进画面。实在推不出来就定一个中性但具体的设定，不要留空、不要写成泛泛的「亚洲人」。
 
-5. `image.prompt` 是**单张表现性插画**（不是技术图，可以放开打光）：四分之三视角半身、纯中性背景、柔和方向主光 + 冷调补光、浅景深、面部最实。
+5. `image.prompt` 是**单张表现性身份图**（不是技术三视图）：四分之三视角半身、纯中性背景、方向主光、浅景深、面部最实。渲染方式必须从本次 `style` 预设整块取用，不能硬编码默认 realistic。
 
-   **画风走半写实厚涂，不要写「扁平矢量卡通」。** 实测「扁平矢量卡通」这句会让模型跟自己拧巴——同一批角色出来有的偏动画、有的偏写实。用这一档：
-   `Semi-realistic character illustration, painterly rendering with soft blended edges and visible brush texture, anatomically grounded`
+   - `realistic` 才使用 `Semi-realistic character illustration...`
+   - `cinematic` 必须逐字使用预设的 `Live-action casting and costume-continuity photography...`，正向不得出现 illustration / painterly / concept art / anime / cel shading；反向必须禁止插画、动画、3D/CGI、娃娃脸、大眼和美容修图
+   - `ghibli` / `inkwash` 使用各自完整预设，不混入摄影皮肤和光学镜头词
 
    **真实感来自不完美，不是细节量。** 皮肤和五官要写具体：可见毛孔、肤色不匀、鼻翼耳缘的细微毛细血管、耳缘透光；眼睛要有湿润高光、下眼睑水光、虹膜纤维；**眼睑和眉毛左右略不对称**；发际线有细碎碎发破开轮廓。老年角色收益最大：老年斑、皮肤松弛，**皱纹要顺着表情肌走**（法令纹、鱼尾纹、抬头纹），不是随机刻线。
 
    **布料决定「像不像真衣服」**：可见织纹、肘部袖口膝盖的磨损与光泽、布料垂坠有重量、褶皱深处有自阴影。
 
-   `negativePrompt` **不要写 `photorealistic` / `3d render`**——一边要真实感一边禁真实感是自相矛盾的。该禁的是「假」：塑料蜡质皮肤、过度磨皮、无毛孔娃娃脸、完全对称的脸、没有高光的死眼、头盔状无碎发的头发、无织纹的平板布料、僵硬的人台姿势。
+   写实档反向词不得禁 `photorealistic`。严格 `cinematic` 应当禁止 `3d render / CGI / game cinematic`，因为它要的是实拍真人而不是高精度数字角色；同时禁止塑料蜡质皮肤、过度磨皮、无毛孔娃娃脸、完全对称、放大眼睛和僵硬人台姿势。
 
 6. **`image.sheet` 是角色设定图——一张 16:9 横构图，内部分三个区。** 这是给出图模型的完整版面指令，比例要写死，不能让它自由发挥：
 

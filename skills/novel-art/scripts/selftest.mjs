@@ -59,6 +59,9 @@ ok(/people/.test(SCENE_STYLE_PRESETS.realistic.negative), 'realistic 预设自�
 ok(/people/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 预设自带禁人');
 ok(/people/.test(SCENE_STYLE_PRESETS.ghibli.negative), 'ghibli 预设自带禁人');
 ok(/people/.test(SCENE_STYLE_PRESETS.inkwash.negative), 'inkwash 预设自带禁人');
+ok(/illustration/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 环境预设必须禁插画');
+ok(/concept art|matte painting/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 环境预设必须禁概念图／绘景');
+ok(/3d render|CGI/.test(SCENE_STYLE_PRESETS.cinematic.negative), 'cinematic 环境预设必须禁 3D／CGI');
 ok(!/pore|skin|subsurface/i.test(SCENE_STYLE_PRESETS.realistic.surface), '环境预设不带皮肤毛孔那套——那是角色的');
 eq(scenePreset('nope'), SCENE_STYLE_PRESETS.realistic, '未知风格退回默认');
 
@@ -218,6 +221,23 @@ eq(ANCHOR_RANGE.join('-'), '3-5', '锚点范围 3–5');
   const d = clone();
   d.scenes[0].image.sheet = 'ONE 16:9 landscape canvas, three zones, no people';
   ok(!gate(d, 'style-match').ok, 'sheet 缺渲染句被拦——画风会飘');
+}
+{
+  const d = clone();
+  const preset = SCENE_STYLE_PRESETS.cinematic;
+  d.style = 'cinematic';
+  for (const item of [...d.scenes, ...(d.props ?? [])]) {
+    item.image.prompt = `${preset.render}. ${item.image.prompt}`;
+    item.image.sheet = item.image.sheet.replace(SCENE_STYLE_PRESETS.realistic.render, preset.render);
+    item.image.negativePrompt = `${preset.negative}${d.props.includes(item) ? ', hands, fingers' : ''}`;
+  }
+  ok(gate(d, 'style-match').ok, '严格真人实景摄影 cinematic 全部通过');
+  const painted = JSON.parse(JSON.stringify(d));
+  painted.scenes[0].image.prompt += ' painterly concept art';
+  ok(gate(painted, 'style-match').detail.includes('动画／绘画信号'), 'cinematic 场景正向混入概念美术被拦');
+  const weak = JSON.parse(JSON.stringify(d));
+  weak.scenes[0].image.negativePrompt = weak.scenes[0].image.negativePrompt.replace('illustration, ', '');
+  ok(gate(weak, 'style-match').detail.includes('illustration'), 'cinematic 场景反向缺插画禁项被拦');
 }
 
 /* ---------------- validate 结构检查 ---------------- */

@@ -24,7 +24,7 @@
 }
 ```
 
-`promptLang` 可省略（**默认 `en`——官方规范口径**）：整条英文、禁角色名，台词在 `<d>[Chinese]` 里保留原文。设成 `zh` 可切整条中文（对齐指令、字段名、镜头标记都有中文版，人名放行）——偏离官方推荐的备选项。`style` 可省略（默认 `realistic`），预设与角色/场景 skill 同名对齐（`realistic` / `cinematic` / `ghibli` / `inkwash`），对应的英文短语（如 `cinematic film still`）必须出现在**每条**分镜图提示词里——同一部剧的分镜图不许画风漂，门查。
+`promptLang` 可省略（默认 `en`）。`style` 与角色/场景 skill 同名对齐；cinematic 每条 frame 使用 `live-action production still`，完整 imagePrompt 自动加入真人演员、实体场景、光学镜头、传感器质感，以及插画/动画/3D/CG禁项。
 
 `seed` 默认写入上述模式。每段先用一次 `single-grid-rough` 生成粗九宫格，人工顺序选择后重排 cuts，并用 `edge-driven` 规划相邻终稿衔接；详见 `candidate-grid.md`。
 

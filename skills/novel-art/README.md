@@ -36,7 +36,7 @@
 | 提示词语言 | 全部英文 |
 | 提示词不含角色名 | `validate --cast cast.json` 才查；不给就**明说跳过** |
 | 变体引用完整 | `variantOf` 指向存在的场景且带 `changes` |
-| 风格与反向词匹配 | `realistic` / `cinematic` 不禁 photorealistic、`ghibli` / `inkwash` 必须禁 |
+| 风格与反向词匹配 | cinematic 强制实景摄影正向词并禁止插画、概念图、动画、3D/CGI；写实档不禁 photorealistic |
 | **道具状态** | ≥1 且落成英文提示词 |
 | **道具尺度** | scale 枚举对应的英文短语必须出现在提示词里 |
 | **道具无手** | 反向提示词禁 hands/fingers |
@@ -77,7 +77,7 @@ node scripts/novel-art.mjs styles                            # 看画风预设
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-art.mjs          seed / validate / checkup / render / styles / slug
-  selftest.mjs           158 项断言，不调模型
+  selftest.mjs           171 项断言，不调模型
 references/
   schema.md              art.json 结构 + 硬规则
   scene-pass.md          怎么填场景设定（AI 短剧的思路）
@@ -96,6 +96,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-158 项断言，覆盖 seed / 画风预设 / 11 道门逐项击穿 / 渲染（中英界面）/ 导出。不调模型、不花额度、1 秒跑完。改完脚本先跑这个。
+171 项断言，覆盖 seed / 严格 cinematic 实景摄影 / 11 道门逐项击穿 / 中英渲染 / 导出。不调模型、不花额度。
 
 **只在 macOS + Node 24 上实测过。** 代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但**没验过**。

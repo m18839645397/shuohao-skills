@@ -26,7 +26,8 @@
 
 **写实与非写实预设的 `negative` 几乎是相反的**：
 
-- `realistic` / `cinematic` **绝不能**禁 `photorealistic` / `3d render`——一边要真实感一边禁真实感是自相矛盾的，它们禁的是「假」（塑料皮肤、无毛孔娃娃脸、游戏引擎光泽）
+- `realistic` / `cinematic` **绝不能**禁 `photorealistic`。
+- `cinematic` **必须**禁 illustration / digital painting / concept art / anime / cel shading / toon shading / 3d render / CGI / game cinematic / oversized eyes / porcelain doll face / beauty retouching；它要的是实拍演员，不是高精度动画角色
 - `ghibli` **必须**禁 `photorealistic` / `3d render` / `visible pores`——写实的那些细节在这里全是反效果
 - `inkwash` **必须**禁 `photorealistic` / `3d render` / 写实皮肤纹理——体积靠墨色浓淡与留白，不靠摄影高光和皮肤微细节
 

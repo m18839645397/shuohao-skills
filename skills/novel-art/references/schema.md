@@ -79,7 +79,7 @@
 4. 出图提示词（主图/反向/设定图/光照）全部英文
 5. 提示词不含角色名（`validate --cast cast.json` 才查，不给就明说跳过）
 6. 变体引用完整：`variantOf` 指向存在的场景且带 `changes`
-7. 风格与反向词匹配：`realistic` / `cinematic` 不禁 photorealistic、`ghibli` / `inkwash` 必须禁；`sheet` 必须含渲染句
+7. 风格与反向词匹配：cinematic 的 prompt/sheet 必须含严格实景摄影句，正向禁止插画/概念图/动画信号，反向必须禁插画、concept/matte painting、anime/cel/toon、3D/CGI/game；所有写实档不得禁 photorealistic
 
 道具专属四道：
 

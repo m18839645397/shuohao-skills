@@ -11,10 +11,10 @@
 | Skill | 做什么 |
 | --- | --- |
 | [**novel-outline**](skills/novel-outline) | 把一本小说改编成短剧大纲五件套：改编说明、人物表、爽点表、分集梗概、资产清单（含叙事道具表）。14 道质量门全部脚本检查，支持已有大纲的体检模式 |
-| [**novel-characters**](skills/novel-characters) | 把大纲定下的角色做成角色设定集：先做群像视觉矩阵，按 importance 分配签名锚点；重要角色先锁身份再展开三视图，避免主配角都成为路人。报告语言与出图风格可选 |
-| [**novel-art**](skills/novel-art) | 给 AI 短剧出美术设定集（场景 + 叙事道具）：一致性锚点、光照与状态变体、尺度参照、无人无手白底提示词。吃 outline.json 预填清单，11 道质量门全部脚本检查 |
+| [**novel-characters**](skills/novel-characters) | 群像视觉矩阵 + 角色资产；cinematic 采用严格真人定妆摄影，并另出 screen-test 单帧供分镜使用，避免三视图的动画/目录感下传 |
+| [**novel-art**](skills/novel-art) | 场景 + 叙事道具资产；cinematic 使用真实地点/实体搭景连续性摄影，禁止概念图、动画和3D/CGI信号。11道门脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算；每场入口状态 + 每个动作拍 `statePatch` 计算剧情状态链，台词本按角色聚合并直接对接 TTS。11 道质量门全部脚本检查 |
-| [**novel-storyboard**](skills/novel-storyboard) | 给 AI 短剧出分镜：每段一次生成粗九宫格，人工顺序选 N 格后再出高清终稿；f1 从动作前 entry state 开始，相邻终稿由 edgePlans 处理。23 道质量门全部脚本检查 |
+| [**novel-storyboard**](skills/novel-storyboard) | 每段粗九宫格→人工选N格→高清终稿；cinematic 九宫格和终稿都强制真人演员、实体场景与光学摄影，23道门检查 |
 
 **五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
 

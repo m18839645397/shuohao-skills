@@ -19,6 +19,7 @@
 - **分镜图按叙事需要自动分配信息量** — `framePlanMode: "adaptive-density"` 按镜头功能选择 sparse / balanced / rich；报告和 export 确定性组装完整 imagePrompt，不再把薄的基础 `frame` 直接交给图像模型
 - **每段从真正的初始帧开始** — `frameEntryMode: "start-boundary"` 强制 f1 展示动作前 entry state，动作只能在0.00秒之后发生；后续子分镜才允许 impact/result
 - **一次粗九宫格后人工选镜** — `candidateMode: "single-grid-rough"` 每段只用一次调用生成粗九格；报告按点击顺序导出 selection.json，选中格再分别生成高清图，衔接由 edgePlans 管
+- **cinematic 严格真人摄影** — 九宫格和终稿都强制真人演员、实体服装/场景、光学镜头与传感器质感，拦截 illustration、concept art、anime、cel shading、3D/CGI/game 信号
 - **相邻镜头共享同一状态边界** — `continuityMode: "state-linked"` 对账每切八项 startState/endState、五项 transitionPlan 和连续段 handoff；Shot 2 起先承接同一瞬间再改变景别/机位
 - **先继承剧本，再设计摄影** — 上游剧本启用状态链时，每切 `sourceState.before/after` 精确复制认领首拍/末拍的计算状态；跨层门拦截“分镜内部自洽，但没有继承剧本”的假连续
 - **分镜图是资产合成，不是凭空画** — 出图挂场景/角色/道具设定图当参考图，novel-art 和 novel-characters 的图在这一步真正被消费。有 codex 就真出图（可选）
@@ -138,7 +139,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 + �
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / select / validate / checkup / render / export / slug
-  selftest.mjs           379 项断言，不调模型
+  selftest.mjs           385 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
@@ -163,6 +164,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-379 项断言，覆盖节拍展开 / 九宫格候选 / 人工选择写回 / edgePlans / H3 骨架 / 段首入口帧 / 自适应密度 / 连续性 / 23 道门逐项击穿 / 中英渲染 / 导出。不调模型、不花额度、1 秒跑完。
+385 项断言，覆盖严格 cinematic 真人摄影、九宫格候选、人工选择、edgePlans、入口帧、连续性和23道门。不调模型、不花额度。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。

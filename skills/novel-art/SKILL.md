@@ -1,6 +1,6 @@
 ---
 name: novel-art
-version: 1.4.0
+version: 1.5.0
 description: |
   给 AI 短剧出美术设定集（场景 + 叙事道具）：场景的设计意图、一致性锚点、光照时段变体、
   空景提示词；道具的戏剧功能、状态变体、尺度参照、白底无手提示词。
@@ -66,7 +66,7 @@ metadata:
 2. 小说原文——自己归纳场景清单（主舞台优先，参考 novel-outline 的主场景上限思路：别贪多）
 3. 用户手写的场景清单
 
-画风：**默认 `realistic`**（半写实厚涂），电影级真人写实用 `cinematic`，动画质感用 `ghibli`，国风水墨用 `inkwash`。**跟角色 skill 保持同一档**——角色与场景用了不同风格，合成的时候没法看。跑 `node {baseDir}/scripts/novel-art.mjs styles` 看预设全文，整块取用不混搭。
+画风：默认 `realistic`；`cinematic` 是真实地点或实体搭景的现场连续性摄影，不是 environment concept art。正向禁插画/概念图/动画词，反向必须禁 illustration、concept/matte painting、anime/cel/toon、3D/CGI/game。跟角色 skill 保持同一档。
 
 有 cast.json（novel-characters 的产出）也带上——校验「提示词不含角色名」要用。
 
@@ -107,9 +107,12 @@ node {baseDir}/scripts/novel-art.mjs validate <art.json> --cast <cast.json>
 
 场景和道具各一张 16:9 设定图，版面都是**主视角大图 + 底部和右侧的 L 形细节边框**。场景：标准取景 + 第一个光照状态，细节格是锚点特写。道具：白底三四分之一主视角（主状态），细节格是锚点特写 + 其他状态 + 侧面。读 `{baseDir}/references/sheet.md` 照调用契约做，要点：
 
+`cinematic` 每项先用 `image.prompt` 单独生成无面板 `images/<slug>-master.png`，再把 master 作为参考生成技术 sheet。master 给 storyboard，sheet 给锚点/状态/QC。
+
 - **没有 codex 就整步跳过**，只交提示词
 - **全图无人**；道具图另加**无手**、**纯白背景**，出现人影或手就重生成
 - **变体场景拿母场景成图当参考图**（`-i` + stdin）——变体机制的意义就在这
+- `cinematic` 下游分镜优先使用场景主视角单帧 `images/<slug>-master.png`，不要把整张 L 形技术设定表作为唯一实景参考
 - 一个场景一次调用绝不批量；单个失败跳过不阻断
 
 ### Step 5 — 输出与汇报
@@ -132,7 +135,8 @@ node {baseDir}/scripts/novel-art.mjs render <剧名>-art.json --html > art-repor
 ├── <剧名>-art.md
 ├── art-report.html                ← 双击就能开
 └── images/
-    └── <slug>-sheet.png           ← 有 codex 才有
+    ├── <slug>-master.png          ← cinematic 下游实景/主状态单帧
+    └── <slug>-sheet.png           ← 技术设定表
 ```
 
 ---
@@ -161,7 +165,7 @@ seed 吃 outline.json 的场景与道具两块（大纲没有 `props` 时道具�
 node {baseDir}/scripts/selftest.mjs
 ```
 
-158 项断言，不调模型、不花额度。11 道质量门每一道都有击穿用例。改完脚本先跑这个。
+171 项断言，不调模型、不花额度，含严格 cinematic 实景摄影合同与动画/CG禁项击穿。改完脚本先跑这个。
 
 ## 自带样例
 

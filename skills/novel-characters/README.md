@@ -10,6 +10,7 @@
 - **群像视觉身份** — 先做 design-matrix，再按 importance 分配1–5个签名锚点；主角在剪影、中景和特写三个距离都能认出，重要角色主动形成对照
 - **音色提示词** — 音色、音高、语速、口音、情绪，双语 voice-design prompt，直接喂 Qwen3-TTS / ElevenLabs Voice Design
 - **角色设定图** — **每个角色一张**：16:9 分三区，左侧约 34% 证件照式半身像（面部基准）、右上全身三视图、右下关键细节特写条。**画风可选**：默认半写实厚涂，也可以出电影级真人写实、吉卜力动画风或国风水墨。白底方便抠图，走 codex 内置出图（可选）
+- **cinematic 真人定妆单帧** — 额外生成 screen-test.png 给分镜使用，避免白底三视图把目录/动画设定稿质感传到最终镜头
 - **关系图谱** — 报告里的一个全景视图：谁跟谁有关系、是什么关系，一眼看完。悬停一个人亮出他的全部关系，点一下跳到那个人的详情
 
 产出 `cast.json` + Markdown + 一个双击就能开的 `report.html`。
@@ -183,8 +184,8 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # 安全文�
 ```
 SKILL.md                 给 agent 读的工作流
 scripts/
-  novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / render / slug
-  selftest.mjs           391 项断言，不调模型
+  novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / screen-test-prompt / render / slug
+  selftest.mjs           397 项断言，不调模型
 references/
   roster-pass.md         第一趟：扫描角色
   profile-pass.md        第二趟：生成角色卡（9 条硬规则）
@@ -201,6 +202,6 @@ references/
 node scripts/selftest.mjs
 ```
 
-391 项断言，覆盖分块 / 别名归并 / 群像视觉矩阵 / importance 签名锚点 / 身份锁定提示词 / 合成 / 多语言 / 校验 / 渲染。不调模型、不花额度、1 秒跑完。
+397 项断言，覆盖群像视觉矩阵、严格真人 cinematic、screen-test、身份锚点、合成、多语言、校验和渲染。不调模型、不花额度、1 秒跑完。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥18。

@@ -921,11 +921,21 @@ ok(gate(FIXTURE, 'frame-entry-state', CTX).ok && gate(FIXTURE, 'frame-entry-stat
   ok(prompt.includes(seg.candidateBoard.cells[0].prompt) && prompt.includes(seg.candidateBoard.cells[8].prompt), '九格描述全部进入候选图提示词');
   ok(prompt.includes('Do not draw cell numbers'), '候选图不让模型画乱码编号');
   eq(candidateSelectionBounds(seg).min, 3, '6秒段至少选择3格');
+  doc.style = 'cinematic';
+  const liveGrid = buildCandidateGridPrompt(seg, 'cinematic');
+  ok(liveGrid.includes('live-action photographic shot-selection contact sheet'), 'cinematic 九宫格明确为真人摄影选镜联系表');
+  ok(liveGrid.includes(STYLE_PRESETS.cinematic.guard) && liveGrid.includes(STYLE_PRESETS.cinematic.negative), 'cinematic 九宫格带严格摄影 guard 和禁项');
 }
 {
   const doc = candidateGridDoc();
   doc.episodes[0].segments[0].candidateBoard.cells.pop();
   ok(!gate(doc, 'candidate-grid-selection', {}).ok, '候选不足九格被拦');
+}
+{
+  const doc = candidateGridDoc();
+  doc.style = 'cinematic';
+  doc.episodes[0].segments[0].candidateBoard.cells[0].prompt += ' painterly illustration';
+  ok(!gate(doc, 'candidate-grid-selection', {}).ok, 'cinematic 九宫格候选描述混入绘画信号被拦');
 }
 {
   const doc = candidateGridDoc();
@@ -982,6 +992,15 @@ ok(gate(FIXTURE, 'candidate-grid-selection', CTX).ok && gate(FIXTURE, 'candidate
     }
   }
   ok(gate(doc, 'style-phrase').ok, '电影级真人写实分镜统一带风格短语时通过');
+  const first = doc.episodes[0].segments[0].cuts[0];
+  const prompt = buildFrameImagePrompt(first, { styleId: 'cinematic' });
+  ok(prompt.includes(STYLE_PRESETS.cinematic.guard) && prompt.includes(STYLE_PRESETS.cinematic.negative), '完整 cinematic imagePrompt 带真人摄影 guard 和动画/CG 禁项');
+  const painted = clone(doc);
+  painted.episodes[0].segments[0].cuts[0].frame += ' painterly concept art';
+  ok(!gate(painted, 'style-phrase').ok, 'cinematic frame 混入 painterly/concept art 被拦');
+  const animatedH3 = clone(doc);
+  animatedH3.episodes[0].segments[0].h3Prompt += ' anime cel shading';
+  ok(!gate(animatedH3, 'style-phrase').ok, 'cinematic H3 混入 anime/cel shading 被拦');
 }
 {
   const doc = clone(FIXTURE);

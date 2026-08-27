@@ -60,12 +60,12 @@
   },
 
   "image": {
-    "style": "Flat vector cartoon with ink-wash colouring",
-    "prompt": "Character design sheet of an elderly Chinese railway switchman ...",
+    "style": "电影级真人写实",
+    "prompt": "Live-action casting and costume-continuity photography of a real human performer ...",
     "promptLocal": "角色设定图：约七十岁的中国老扳道工……",
-    "negativePrompt": "photorealistic, 3d render, young face, ...",
-    "tags": ["flat vector", "character sheet", "ink wash palette"],
-    "sheet": "Single character model sheet on ONE 16:9 landscape canvas ... LEFT ZONE ... about 34% ... one bust portrait ... RIGHT-TOP ZONE ... three FULL-BODY views ... PROPORTIONS ARE CRITICAL ... RIGHT-BOTTOM ZONE ... four to five small isolated close-up studies ..."
+    "negativePrompt": "illustration, digital painting, concept art, anime, cel shading, 3d render, CGI character, oversized eyes, porcelain doll face, ...",
+    "tags": ["live-action casting photography", "costume continuity", "cinema-camera portrait"],
+    "sheet": "A photographic contact sheet of the same real human performer on ONE 16:9 landscape canvas ..."
   },
 
   "voice": {

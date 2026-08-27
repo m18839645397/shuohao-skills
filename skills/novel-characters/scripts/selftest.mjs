@@ -17,6 +17,7 @@ import {
   applyDesignMatrix,
   assembleCast,
   buildIdentityPrompt,
+  buildScreenTestPrompt,
   buildGraph,
   chunkText,
   mergeCandidates,
@@ -909,13 +910,38 @@ for (const [id, p] of Object.entries(STYLE_PRESETS)) {
 }
 // 这是整件事最容易搞反的地方：写实与非写实预设的反向提示词几乎相反
 ok(!/photorealistic|3d render/i.test(STYLE_PRESETS.realistic.negative), 'realistic 不禁写实');
-ok(!/photorealistic|3d render/i.test(STYLE_PRESETS.cinematic.negative), 'cinematic 不禁写实');
+ok(!/photorealistic/i.test(STYLE_PRESETS.cinematic.negative), 'cinematic 不禁 photorealistic');
+ok(/3d render|\bCGI\b/i.test(STYLE_PRESETS.cinematic.negative), 'cinematic 必须禁 3D／CGI');
 ok(/photorealistic/i.test(STYLE_PRESETS.ghibli.negative), 'ghibli 必须禁写实');
 ok(/photorealistic/i.test(STYLE_PRESETS.inkwash.negative), 'inkwash 必须禁写实');
 // 写实的表面细节在吉卜力里是反效果，两边不能是同一段
 ok(/visible pores/i.test(STYLE_PRESETS.realistic.surface), 'realistic 要毛孔');
 ok(/no pores/i.test(STYLE_PRESETS.ghibli.surface), 'ghibli 明确不要毛孔');
 ok(STYLE_PRESETS.realistic.surface !== STYLE_PRESETS.ghibli.surface, '写实与吉卜力的表面处理不同');
+
+// cinematic 必须是真人摄影，不是高精度动画概念稿
+{
+  const cinematic = clone();
+  const preset = STYLE_PRESETS.cinematic;
+  for (const c of cinematic) {
+    c.image.style = '电影级真人写实';
+    c.image.prompt = `${preset.render}. ${c.image.prompt}`;
+    c.image.sheet = c.image.sheet.replace(STYLE_PRESETS.realistic.render, preset.render);
+    c.image.negativePrompt = preset.negative;
+  }
+  eq(validateCast(cinematic, SOURCE, 'zh', 'cinematic').length, 0, '严格真人摄影 cinematic 全部通过');
+  const screen = buildScreenTestPrompt(cinematic[0], 'cinematic');
+  ok(screen.includes('ONE single-frame live-action casting') && screen.includes(preset.render), 'screen-test 是单帧真人定妆摄影');
+  ok(screen.includes('not a model sheet') && screen.includes('Avoid:'), 'screen-test 不继承三视图版式并带严格禁项');
+
+  const painted = JSON.parse(JSON.stringify(cinematic));
+  painted[0].image.prompt += ' painterly illustration';
+  ok(validateCast(painted, SOURCE, 'zh', 'cinematic').some((x) => x.includes('动画／绘画信号')), 'cinematic 正向混入 painterly/illustration 被拦');
+
+  const weakNegative = JSON.parse(JSON.stringify(cinematic));
+  weakNegative[0].image.negativePrompt = weakNegative[0].image.negativePrompt.replace('illustration, ', '');
+  ok(validateCast(weakNegative, SOURCE, 'zh', 'cinematic').some((x) => x.includes('illustration')), 'cinematic 反向词缺插画禁项被拦');
+}
 
 // 校验器要能抓住风格与反向提示词搞反
 const wrongStyle = clone();

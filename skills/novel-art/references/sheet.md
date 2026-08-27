@@ -29,6 +29,8 @@
 
 提示词字段 `image.sheet`，场景和道具都落到 `./images/<slug>-sheet.png`（`slug` 命令生成安全文件名）。
 
+`cinematic` 另保留主区的单帧实景参考 `./images/<slug>-master.png` 供 storyboard 使用。它只包含主视角，不带 L 形细节格、边框或文字；技术 sheet 继续用于锚点和材质核对。
+
 ## 三条硬要求
 
 1. **全图空景无人。**提示词里 `Absolutely no people anywhere` 必须在，反向提示词禁人必须在。生成图里出现一个人影就重生成——环境资产里的人洗不掉。

@@ -37,12 +37,12 @@ export const SCENE_STYLE_PRESETS = {
   cinematic: {
     label: '电影级真人写实',
     render:
-      'Photorealistic feature-film environment concept art, live-action production design, physically plausible architecture and materials, cinematic lens depth, controlled contrast and restrained filmic colour grading',
+      'Live-action feature-film set and prop continuity photography of a real location or physically built production set, captured with a cinema camera and real optical lens rendering, physically plausible construction, subtle sensor grain, natural highlight roll-off and restrained filmic colour grading',
     surface:
-      'Production-ready material realism: authentic stone, wood, metal, glass, fabric and paper response; fine wear, dust, moisture, patina and construction detail at believable scale; natural atmospheric perspective, practical light interaction and preserved highlight-to-shadow detail without a synthetic CGI sheen',
+      'Photographic material response from real stone, wood, metal, glass, fabric and paper at believable scale; irregular wear, dust, moisture, patina, imperfect construction and practical-light interaction; natural atmospheric perspective and preserved highlight-to-shadow detail without synthetic surface regularity',
     negative:
-      'people, human figures, characters, crowds, silhouettes of people, plastic CGI look, game-engine sheen, over-sharpened HDR, crushed blacks, clipped highlights, artificial teal-orange grading, sterile showroom cleanliness, warped perspective, melted geometry, floating objects, text, watermark, signature',
-    tags: ['cinematic photorealism', 'feature-film production design', 'environment sheet', 'physical materials', 'filmic colour'],
+      'people, human figures, characters, crowds, silhouettes of people, illustration, digital painting, painterly brushwork, concept art, matte painting, anime background, cel shading, toon shading, stylized geometry, 3d render, CGI environment, Unreal Engine look, game cinematic, plastic CGI look, game-engine sheen, over-sharpened HDR, crushed blacks, clipped highlights, artificial teal-orange grading, sterile showroom cleanliness, warped perspective, melted geometry, floating objects, text, watermark, signature',
+    tags: ['live-action set photography', 'location continuity', 'cinema-camera reference', 'physical materials', 'filmic colour'],
   },
 
   ghibli: {
@@ -231,10 +231,22 @@ export function gateReport(doc, castNames = null) {
     }
 
     // 风格与反向词匹配 + sheet 带渲染句
-    const bansRealism = /photorealistic|3d render/i.test(neg);
-    if (['realistic', 'cinematic'].includes(style) && bansRealism) bad.style.push(`${label} 禁了 photorealistic`);
-    if (['ghibli', 'inkwash'].includes(style) && !bansRealism) bad.style.push(`${label} 没禁 photorealistic`);
+    const bansPhotorealism = /photorealistic/i.test(neg);
+    if (['realistic', 'cinematic'].includes(style) && bansPhotorealism) bad.style.push(`${label} 禁了 photorealistic`);
+    if (['ghibli', 'inkwash'].includes(style) && !bansPhotorealism) bad.style.push(`${label} 没禁 photorealistic`);
     if (thText(s?.image?.sheet) && !s.image.sheet.includes(preset.render)) bad.style.push(`${label} 的 sheet 缺渲染句`);
+    if (style === 'cinematic') {
+      if (thText(s?.image?.prompt) && !s.image.prompt.includes(preset.render)) bad.style.push(`${label} 的 prompt 缺严格实景摄影渲染句`);
+      const positive = `${s?.image?.prompt ?? ''} ${s?.image?.sheet ?? ''}`;
+      const leaked = positive.match(/semi-realistic|illustration|painterly|visible brush texture|concept art|matte painting|anime|cel shading|toon shading/i);
+      if (leaked) bad.style.push(`${label} 正向提示词混入动画／绘画信号「${leaked[0]}」`);
+      for (const [re, missing] of [
+        [/illustration/i, 'illustration'],
+        [/concept art|matte painting/i, 'concept art／matte painting'],
+        [/anime|cel shading|toon shading/i, 'anime／cel／toon'],
+        [/3d render|\bCGI\b|Unreal Engine|game cinematic/i, '3D／CGI／game'],
+      ]) if (!re.test(neg)) bad.style.push(`${label} 的 cinematic negativePrompt 缺「${missing}」禁项`);
+    }
   }
 
   // 道具专属的门

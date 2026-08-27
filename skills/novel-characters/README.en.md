@@ -10,6 +10,7 @@ Feed it a novel or a short story, and get a complete design bible for every char
 - **Ensemble visual identity** — build a design matrix first, then assign 1–5 signature anchors by importance; leads remain identifiable at silhouette, medium and close range while major characters contrast deliberately
 - **Voice prompts** — timbre, pitch, pace, accent, emotion, plus a voice-design prompt for Qwen3-TTS / ElevenLabs Voice Design
 - **A character model sheet** — **one per character**: a 16:9 image in three zones: an ID-photo-style bust on the left (~34%, the reference for the face design), a full-body turnaround top-right, and a strip of key-detail close-ups bottom-right. White background for clean cut-out, generated through codex's built-in image tool (optional)
+- **Cinematic live-action screen test** — a separate single-frame casting/wardrobe photograph for storyboard reference, so the white technical turnaround does not leak catalogue or animated-concept styling downstream
 - **Relationship map** — a whole-cast view inside the report: who is tied to whom, and how. Hover a character to light up every link they are part of, click to jump to their profile
 
 Outputs `cast.json`, a Markdown report, and a self-contained `report.html` you can just double-click.
@@ -182,8 +183,8 @@ node scripts/novel-characters.mjs slug "胡二爷"                  # filesystem
 ```
 SKILL.md                 the workflow the agent reads
 scripts/
-  novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / render / slug
-  selftest.mjs           391 assertions, never calls a model
+  novel-characters.mjs   chunk / merge / assemble / validate / identity-prompt / screen-test-prompt / render / slug
+  selftest.mjs           397 assertions, never calls a model
 references/
   roster-pass.md         pass 1: scanning for characters
   profile-pass.md        pass 2: building a character sheet (9 hard rules)
@@ -200,6 +201,6 @@ references/
 node scripts/selftest.mjs
 ```
 
-391 assertions across chunking, alias merging, ensemble design, importance-driven signature anchors, identity-lock prompts, assembly, localization, validation, and rendering. No model calls, no quota, runs in about a second.
+397 assertions across ensemble design, strict live-action cinematic contracts, screen-test prompts, signature anchors, assembly, localization, validation, and rendering. No model calls or quota.
 
 Full selftest verified on Windows with Node 22.19.0; Node 18 or newer is required.
