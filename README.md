@@ -14,7 +14,7 @@
 | [**novel-characters**](skills/novel-characters) | 群像视觉矩阵 + 角色资产；cinematic 采用严格真人定妆摄影，并另出 screen-test 单帧供分镜使用，避免三视图的动画/目录感下传 |
 | [**novel-art**](skills/novel-art) | 场景 + 叙事道具资产；cinematic 使用真实地点/实体搭景连续性摄影，禁止概念图、动画和3D/CGI信号。11道门脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算；每场入口状态 + 每个动作拍 `statePatch` 计算剧情状态链，台词本按角色聚合并直接对接 TTS。11 道质量门全部脚本检查 |
-| [**novel-storyboard**](skills/novel-storyboard) | 每段粗九宫格→人工选N格→高清终稿；cinematic 九宫格和终稿都强制真人演员、实体场景与光学摄影，23道门检查 |
+| [**novel-storyboard**](skills/novel-storyboard) | 每段粗九宫格→人工选 N 格→高清终稿；H3 单图自动走 I2VA、多图走 Ref2VA，可选 8 种视频风格；23 道门检查 Picture/Shot/台词/状态与连续性 |
 
 **五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
 
@@ -102,7 +102,50 @@ $novel-storyboard
 输出到 D:\novels\demo\storyboard。
 ```
 
-新 seed 默认每段 5–10 秒，并启用 `h3PromptMode: "official-auto"`、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"` 与 `continuityMode: "state-linked"`。H3 单图自动走 I2VA、多分镜参考图走 Ref2VA；每切先继承剧本状态，再按镜头功能选择 sparse / balanced / rich。还可从 MiniMax 官方其余 8 个技能中选择一种 `h3Style`（先运行 `h3-styles` 查看），只套用视听/运动风格，不套业务流程。
+新 seed 默认每段 5–10 秒，并启用 `h3PromptMode: "official-auto"`、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"` 与 `continuityMode: "state-linked"`。每切先继承剧本状态，再按镜头功能选择 sparse / balanced / rich。
+
+H3 模式由每段参考图数量确定：
+
+| 条件 | 模式 | 提示词结构 |
+| --- | --- | --- |
+| 1 个 cut / 1 张首帧图 | I2VA | 固定首帧对齐行 + `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music` |
+| 2 个以上 cut / 每切一张参考图 | Ref2VA | `subject_definitions` / `summary` / `retention_analysis` / `detailed_description` / 声景 / 配乐 |
+| 旧 storyboard 未声明 `h3PromptMode` | 兼容模式 | 保留旧多图对齐格式，仍可 validate / render / export |
+
+Ref2VA 会检查每张 Picture 的定义、`fully_preserved` 记录、对应 Shot 和切点时间；台词必须在正确 Shot 的 `<d>` 中，说话人 `(Sx)` 按本段首次发声顺序稳定复用，画外音必须注明闭唇。官方自动模式使用英文，台词、歌词和画面文字保留原语言。
+
+#### 5.1 可选的 8 种 H3 风格
+
+`h3Style` 只管视频阶段的视觉运动、剪辑、文字包装和声音手感，不替代角色/场景资产的静态 `style`，也不继承来源技能的固定时长、审批流程或业务文案。
+
+| `h3Style` | 风格 |
+| --- | --- |
+| `minimalist-product-ad-generator` | 极简产品广告：留白、材质特写、真实结构动作、克制转场 |
+| `3d-animation-short-generator` | 风格化 3D：强剪影、可触材质、挤压伸展与弹性表演 |
+| `papercraft-stop-motion-explainer` | 纸艺定格：分层纸雕、2.5D 视差、铰链/滑轨式分段运动 |
+| `brand-promo-video-generator` | 品牌宣传：产品证据可读、单拍单动作、品牌安全区 |
+| `music-video-subtitle-generator` | 音乐美学贴字：卡拍硬切、空间歌词文字、统一 Master Audio |
+| `co-op-game-intro-generator` | 双人游戏菜单：双角色身份锁、可读 UI、Continue 交互 |
+| `paper-collage-explainer-generator` | 半调纸拼贴：大色块、半调剪影、纸片弹入/压平/锁定 |
+| `handdrawn-live-video-generator` | 手绘实拍融合：真实接触、同一实体连续变形、慢半拍手持追拍 |
+
+3D、纸艺、拼贴、手绘实拍这类强材质风格必须同时准备匹配的角色、场景和分镜参考图；不能指望 H3 只靠文字把真人首帧稳定改造成另一种材质。
+
+先查看风格并在 seed 时选择：
+
+```bash
+node <项目目录>/skills/novel-storyboard/scripts/novel-storyboard.mjs h3-styles
+node <项目目录>/skills/novel-storyboard/scripts/novel-storyboard.mjs seed \
+  ../script/demo-script.json --eps 1 \
+  --h3-style paper-collage-explainer-generator > ./demo-storyboard.json
+```
+
+cuts 完成后先生成官方可填充骨架，再把 `visualPlan`、`cameraPlan`、状态、声音和台词填入；骨架中的方括号占位不能直接交给 H3：
+
+```bash
+node <项目目录>/skills/novel-storyboard/scripts/novel-storyboard.mjs h3-scaffold \
+  ./demo-storyboard.json --segment E01-01
+```
 
 完成后导出 H3 投产包：
 
@@ -112,7 +155,7 @@ node <项目目录>/skills/novel-storyboard/scripts/novel-storyboard.mjs export 
   ./<剧名>-storyboard.json --script ../script/<剧名>-script.json --out .
 ```
 
-每个 `E01-01/` 段目录就是一次视频生成所需的 `prompt.md` + `f1..fN.png`；不要把这些段目录再套进 `segments/`，否则报告的相对图片路径会失效。
+每个 `E01-01/` 段目录就是一次视频生成所需的 `prompt.md` + `f1..fN.prompt.md` + `f1..fN.png`；`prompt.md` 和根部 `manifest.json` 都会标明实际 H3 模式与 `h3Style`。不要把这些段目录再套进 `segments/`，否则报告的相对图片路径会失效。
 
 ### 6. 合并评审报告
 
@@ -224,7 +267,7 @@ skills/<skill-name>/
 for f in skills/*/scripts/selftest.mjs; do node "$f"; done
 ```
 
-没有配 CI——自测足够快（1 秒），本地跑一次比等 CI 更省事。**只在 macOS + Node 24 上验过**；代码没有平台相关调用，Linux 和更低版本 Node 理论上没问题，但没验。
+没有配 CI——自测足够快，本地跑一次比等 CI 更省事。当前已在 **Windows + Node 22.19.0** 跑通五个 skill 全部自测和合并报告 92 项自测；项目要求 Node ≥ 18。
 
 ## 端到端 demo 工作目录约定
 
