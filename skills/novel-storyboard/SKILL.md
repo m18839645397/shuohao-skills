@@ -1,12 +1,13 @@
 ---
 name: novel-storyboard
-version: 1.15.0
+version: 1.16.0
 description: |
   给 AI 短剧出分镜：三层结构——段（新 seed 默认 5–10 秒，一次视频生成）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
-  每段自带一条 MiniMax H3 视频提示词（官方口径默认英文、逐镜换行，promptLang 可切中文）：对齐指令和
-  [Shot k] 切点时刻由分镜结构推导、逐字对账，台词逐字进 <d> 块（写法规范已内化为
-  references/h3-prompt.md，不依赖外部 skill）；每切带克制电影化 cameraPlan，明确起点、目标、焦点、
+  每段自带一条 MiniMax H3 视频提示词：新 seed 按参考图数量自动选官方 I2VA（单图）或 Ref2VA（多图），
+  Picture 定义、保真关系、字段顺序和 [Shot k] 切点由分镜结构推导并逐字对账；台词在正确 Shot 逐字进
+  <d>，说话人 (Sx) 稳定、画外音闭唇（规范已内化为 references/h3-prompt.md，不依赖外部 skill）。
+  可从 MiniMax 官方其余 8 个技能选择 h3Style，逐段锁定视频运动/包装指纹；每切带克制电影化 cameraPlan，明确起点、目标、焦点、
   速度/幅度、结束构图、导演意图与转场；投产级丰富模式逐切写空间、光线、主体、动作、效果与连续性，
   静态分镜图按镜头功能自动分配 sparse/balanced/rich 画面密度并确定性组装完整 imagePrompt，
   每段 f1 强制对齐动作前 entry state，人物动作只在0.00秒之后开始，
@@ -57,7 +58,7 @@ metadata:
 | 单段 5–10 秒 | 新 seed 默认生成区间；长对话和连续动作在动作中段做 handoff，旧 JSON 仍兼容只守 15 秒上限 |
 | 台词装得下 | 认领节拍的台词秒数 ≤ 镜头秒数——逐镜检查，不是拍脑袋 |
 | 入口首帧 + 运动双提示词 | 每段 f1 是动作前 entry state，运动只在0.00秒后发生；景别、运镜是枚举，英文短语必须写进对应提示词 |
-| **H3 视频提示词（每镜一段）** | MiniMax H3 的 I2VA 结构：固定对齐指令 + integrated_multimodal_description + overall_soundscape + non_diegetic_music。**认领节拍的台词逐字进 `<d>[Chinese] …</d>` 块**——对白、声景、配乐一段提示词全带上 |
+| **H3 视频提示词（每段一条）** | 新 seed 单图走 I2VA 三字段，多图走 Ref2VA 六字段；Picture/Shot/切点确定性对账。可选 8 种 `h3Style`，台词在正确 Shot 逐字进 `<d>`，说话人 `(Sx)` 按本段发声顺序稳定复用 |
 | 生成批次单 | 同场景 + 同光照的镜头归一批，共用同一张环境参考图——AI 版的顺场表，脚本自动汇总 |
 | 配音对齐单 | 每句台词对到镜号——TTS 音频贴到哪一段视频，脚本自动汇总 |
 
@@ -91,7 +92,7 @@ node {baseDir}/scripts/novel-storyboard.mjs seed <script.json> --eps 1-3 > <work
 
 每集一份任务，能并发就并发。每份任务拿到：
 
-- `{baseDir}/references/storyboard-pass.md`、`camera-direction.md`、`prompt-detail.md`、`candidate-grid.md`、`frame-entry.md`、`frame-density.md`、`continuity.md` 和 `schema.md`（读它们，照着做）
+- `{baseDir}/references/storyboard-pass.md`、`camera-direction.md`、`prompt-detail.md`、`candidate-grid.md`、`frame-entry.md`、`frame-density.md`、`continuity.md`、`h3-prompt.md` 和 `schema.md`（读它们，照着做）；顶层选了 `h3Style` 再读 `h3-styles.md`
 - 该集的 seedScenes 底稿 + 场景卡（art.json 的锚点与光照提示词）+ 角色卡（cast.json 的形象要点）
 
 流程先按剧情单元分段，为每段写固定九格 `candidateBoard.cells`，用 export 的 `candidate-grid.prompt.md` 一次生成粗图。报告中人工按播放顺序选 N 格并导出 selection.json；`select` 写回后，按 selected 重排 cuts，补齐 candidateId 与 N−1 条 edgePlans，再生成高清终稿与 H3。
@@ -103,7 +104,9 @@ node {baseDir}/scripts/novel-storyboard.mjs select <storyboard.json> <selection.
 
 **画面密度不是剧情强度的同义词**：新空间定场和复杂关系用 rich；普通对话用 balanced；反应、停顿和手部/道具特写用 sparse。强烈情绪的脸部特写仍应克制，靠微表情、材质、光影和留白，而不是塞背景物件。最终出图不直接使用基础 `frame`，必须使用报告复制按钮或 export 生成的完整 imagePrompt。
 
-**每段写一条 `h3Prompt`**，照 `{baseDir}/references/h3-prompt.md` 写（官方方法论的内化版，**不依赖任何外部 skill**）。官方口径默认英文（`promptLang` 可切中文），**每个镜头独立一行**。Shot 2 起先写同一瞬间承接句和 transitionPlan，再改变景别/机位；连续段 Shot 1 先写段间承接句和 handoff。其余保持：对齐指令/切点时刻推导，台词逐字进 `<d>`，cameraPlan/visualPlan 逐字进自己的 Shot，audioPlan 进入声景与配乐字段。
+**每段写一条 `h3Prompt`**，照 `{baseDir}/references/h3-prompt.md` 写（官方方法论内化版，**不依赖任何外部 skill**）。cuts 完成后先运行 `h3-scaffold <storyboard.json> [--segment E01-01]` 取得可填充骨架；新 seed 的 `h3PromptMode: "official-auto"` 会让单 cut 用 I2VA、多 cut 用 Ref2VA，Picture 定义和 retention 前缀由 `h3ReferencePlan(cuts)` 推导。官方自动模式固定英文；**每个镜头独立一行**。Shot 2 起先写同一瞬间承接句和 transitionPlan，再改变景别/机位；连续段 Shot 1 先写段间承接句和 handoff。台词必须在正确 Shot 逐字进 `<d>`，按本段首次发声顺序分配并复用 `(Sx)`；cameraPlan/visualPlan 逐字进自己的 Shot，audioPlan 进入声景与配乐字段。
+
+可选 `h3Style` 不是静态 `style` 的别名。用 `node {baseDir}/scripts/novel-storyboard.mjs h3-styles [id]` 查看 8 个官方衍生风格；选定后把该风格指纹逐字放入每段视听描述的 Shot 1。强材质风格（3D/纸艺/拼贴/手绘实拍）必须有匹配的上游参考资产，不能靠视频文字硬扭真人首帧。
 
 切完把 `seedScenes` 删掉。
 
@@ -207,7 +210,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-394 项断言，不调模型、不花额度。23 道门包含 cinematic、naturalistic、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
+424 项断言，不调模型、不花额度。23 道门包含 I2VA/Ref2VA 路由与骨架、8 种 H3 风格、说话人编号、cinematic、naturalistic、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
 
 ## 自带样例
 

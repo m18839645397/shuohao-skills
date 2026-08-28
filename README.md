@@ -102,7 +102,7 @@ $novel-storyboard
 输出到 D:\novels\demo\storyboard。
 ```
 
-新 seed 默认每段 5–10 秒，并启用 `cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"` 与 `continuityMode: "state-linked"`。每切先继承剧本状态，再按镜头功能选择 sparse / balanced / rich；报告和 export 统一输出完整 imagePrompt，避免只拿薄的基础 `frame` 出图。确认三档代表图后再扩到整集。
+新 seed 默认每段 5–10 秒，并启用 `h3PromptMode: "official-auto"`、`cameraPlanMode: "cinematic-controlled"`、`promptDetailMode: "production-rich"`、`framePlanMode: "adaptive-density"` 与 `continuityMode: "state-linked"`。H3 单图自动走 I2VA、多分镜参考图走 Ref2VA；每切先继承剧本状态，再按镜头功能选择 sparse / balanced / rich。还可从 MiniMax 官方其余 8 个技能中选择一种 `h3Style`（先运行 `h3-styles` 查看），只套用视听/运动风格，不套业务流程。
 
 完成后导出 H3 投产包：
 

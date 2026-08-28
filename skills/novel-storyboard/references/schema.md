@@ -17,14 +17,16 @@
   "selectionMode": "human-ordered",
   "edgePlanMode": "edge-driven",
   "continuityMode": "state-linked",
+  "h3PromptMode": "official-auto",
+  "h3Style": null,
   "style": "realistic",
-  "promptLang": "zh",
+  "promptLang": "en",
   "params": { "minSegmentSeconds": 5, "maxSegmentSeconds": 10, "minCutSeconds": 2, "maxCutSeconds": 5, "maxOnScreen": 3, "tolerance": 0.15 },
   "episodes": [ { "ep": 1, "segments": [ ... ] } ]
 }
 ```
 
-`promptLang` 可省略（默认 `en`）。`style` 与角色/场景 skill 同名对齐；cinematic 每条 frame 使用 `live-action production still`，完整 imagePrompt 自动加入真人演员、实体场景、光学镜头、传感器质感，以及插画/动画/3D/CG禁项。
+`promptLang` 可省略（默认 `en`）。`style` 与角色/场景 skill 同名对齐；`h3Style` 是可选的视频运动/包装风格，8 个值见 `h3-styles.md`，不要与静态资产 `style` 混为一谈。cinematic 每条 frame 使用 `live-action production still`，完整 imagePrompt 自动加入真人演员、实体场景、光学镜头、传感器质感，以及插画/动画/3D/CG禁项。
 
 `seed` 默认写入上述模式。每段先用一次 `single-grid-rough` 生成粗九宫格，人工顺序选择后重排 cuts，并用 `edge-driven` 规划相邻终稿衔接；详见 `candidate-grid.md`。
 
@@ -39,7 +41,7 @@
 | `edgePlans` | object[] | 相邻人工选择之间的运镜边，恰好 N−1 条；from/to、camera、transition、pace、magnitude、target、focus、intent |
 | `handoff` | object | 段间交接：本集第一段 `episode-start`；其余为 `continuous` / `scene-change` / `time-jump`。连续段带 fromSegment、visualCarry、motionCarry、audioCarry |
 | `audioPlan` | object | 投产音频计划：`soundscape` 含 baseline/build/events/aftermath；`music.mode` 为 scored 时含 style/instrumentation/arc/sync，为 none 时配乐字段写 N/A/无 |
-| `h3Prompt` | string | **一段一条 H3 视频提示词**，正文语言跟 `promptLang`（默认中文），结构见 `references/h3-prompt.md` |
+| `h3Prompt` | string | **一段一条 H3 视频提示词**，正文语言跟 `promptLang`（默认英文）；新 seed 单图 I2VA、多图 Ref2VA，结构见 `references/h3-prompt.md` |
 | `note` | string | 备注，可选 |
 
 ## cut（分镜）
@@ -68,26 +70,40 @@
 
 ## h3Prompt 的结构（多道门逐层对账）
 
-写法见 `references/h3-prompt.md`（官方方法论的内化版，本 skill 自包含不依赖外部 skill）。骨架：
+写法见 `references/h3-prompt.md`（官方方法论的内化版，本 skill 自包含不依赖外部 skill）。新 seed 的 `h3PromptMode: "official-auto"` 按参考图数量路由：
+
+- 单 cut：I2VA，固定首帧对齐行 + 三个 core fields。
+- 多 cut：Ref2VA，六字段按序：`subject_definitions` / `summary` / `retention_analysis` / `detailed_description` / `overall_soundscape` / `non_diegetic_music`。
+
+多 cut 骨架：
 
 ```text
-How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 2) aligns with the 3.00-second mark of the target video; ….
+subject_definitions:
+<Picture 1> is the first frame of [Shot 1] at 0.00 seconds, ...
+<Picture 2> is a storyboard reference for [Shot 2] at 3.00 seconds, ...
 
-integrated_multimodal_description:
-[Shot 1] Cinematic, live-action, …（首格锚定 → 动作 → 运镜 → 对白）
-[Shot 2] At 00:03.000, the camera cuts to …（每个镜头独立一行，切点时刻开头）
+summary:
+[keyframe completion + reference generation] ...
+
+retention_analysis:
+<Picture 1> ([Shot 1] first frame): fully_preserved - ...
+<Picture 2> ([Shot 2] storyboard reference at 3.00 seconds): fully_preserved - ...
+
+detailed_description:
+[Shot 1] ... <Picture 1> ...
+[Shot 2] At 00:03.000, ... <Picture 2> ...
 
 overall_soundscape: …（环境声与动作声，1–4 句）
 
 non_diegetic_music: …（1–3 句，没有就 N/A）
 ```
 
-确定性检查的八条：
+确定性检查：
 
-1. **首行对齐指令整行由分镜结构按 `promptLang` 推导**（`h3AlignmentLine`）：多分镜的段把每张分镜图钉在自己的切点秒数上；单分镜的段用固定句式。validate **逐字对账**——分镜秒数一改，旧指令立刻对不上
-2. 三个字段名齐全且按序；描述正文有 `[Shot 1]`
+1. `official-auto` 单图必须走 I2VA，多图必须走 Ref2VA；旧 JSON 未声明模式时保留原多图格式兼容
+2. I2VA 三字段、Ref2VA 六字段齐全且按序；Ref2VA 的 Picture 定义、`fully_preserved` 记录和 Shot 引用逐张对账
 3. **每个 `[Shot k]`（k ≥ 2）必须带切点时刻 `At 00:0X.XXX,`，且等于前面分镜秒数的累计**——节奏写在纸上就必须和提示词一致
-4. 认领节拍的每句台词**逐字**进 `<d>[Chinese] …</d>`；说话人身份音色语气用英文写在 `<d>` 外；画外音用 `says in an off-screen voiceover` 并注明唇形闭合
+4. 认领节拍的每句台词在**正确 Shot** 逐字进 `<d>[Chinese] …</d>`；`(Sx)` 按本段发声顺序稳定分配；画外音用 `says in an off-screen voiceover` 并注明 `lips remain completely closed`
 5. `<d>` 块之外的正文语言与 `promptLang` 一致（中文写成英文、英文混进中文都拦）；英文模式禁角色名，中文模式放行（身份靠分镜图锚定）
 6. 每个分镜的运镜词必须出现在自己的 `[Shot k]`；电影化模式下，动态运镜的速度/幅度、转场 token、`cameraPlan` 五个文本字段逐字对账，固定/动态参数匹配，并拦截英文提示词中同切出现多个主运镜
 7. 丰富模式下，`visualPlan` 六层逐字进入本切；`audioPlan.soundscape` 四层逐字进入 overall_soundscape；有配乐时 `audioPlan.music` 四层逐字进入 non_diegetic_music，无配乐明确 N/A/无。英文每项至少 24 字符，中文至少 10 字符
@@ -96,6 +112,7 @@ non_diegetic_music: …（1–3 句，没有就 N/A）
 10. 九宫格模式下，每段恰好九格；人工选择从 entry 到 result，数量符合段长；cuts/candidateId 与 N−1 条 edgePlans 对账
 11. 连续模式下，相邻 cut 状态八项逐字相等，Shot 2 起有同一瞬间承接句和五项 transitionPlan；连续 segment 的末态/首态相等，handoff 三项进入下一段 Shot 1 与声景
 12. 上游剧本启用状态链时，每切 `sourceState.before/after` 与认领节拍的计算前态/后态逐项相等
+13. 选择 `h3Style` 时，其确定性风格指纹必须逐段进入视听描述的 `[Shot 1]`；8 种风格详见 `h3-styles.md`
 
 ## 时长约束链
 

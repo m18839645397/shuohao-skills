@@ -72,7 +72,7 @@ node scripts/novel-storyboard.mjs select storyboard.json selection.json \
 1. 让 cuts 数量等于 selected 数量；
 2. 按顺序写每切 `candidateId`；
 3. 在详细 `frame` 中保留所选格子的 prompt 原句并扩充高清细节；
-4. 重算 beats、seconds、Picture 对齐与 H3；
+4. 重算 beats、seconds、H3 模式、Picture 定义/保真关系与 Shot 切点；
 5. 为相邻选择填写 N−1 条 `edgePlans`；
 6. 完成后改为 `needsReplan: false`。
 

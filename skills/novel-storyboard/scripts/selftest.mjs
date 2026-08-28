@@ -28,6 +28,9 @@ import {
   FRAME_PLAN_TEXT_FIELDS,
   FRAME_ROLES,
   FRAME_MOMENTS,
+  H3_PROMPT_MODE,
+  H3_REF_FIELDS,
+  H3_STYLE_PRESETS,
   EDGE_PLAN_MODE,
   EDGE_PLAN_FIELDS,
   SELECTION_MODE,
@@ -41,6 +44,7 @@ import {
   VISUAL_PLAN_FIELDS,
   buildFrameImagePrompt,
   buildCandidateGridPrompt,
+  buildH3PromptScaffold,
   candidateSelectionBounds,
   applyCandidateSelection,
   exportPack,
@@ -57,12 +61,16 @@ import {
   h3CutSlices,
   h3CutTime,
   h3FieldValue,
+  h3ModeForCuts,
+  h3ReferencePlan,
   h3Remainder,
+  h3StyleDirective,
   loadRecipes,
   parseCardFields,
   paramsOf,
   recipeDrift,
   renderHtml,
+  renderH3StyleCatalog,
   renderMarkdown,
   seedFromScript,
   segSeconds,
@@ -93,6 +101,30 @@ function eq(actual, expected, label) {
 }
 const clone = (x) => structuredClone(x);
 const gate = (doc, id, ctx = CTX) => gateReport(doc, ctx).find((g) => g.id === id);
+
+const officialAutoDoc = () => {
+  const doc = clone(FIXTURE);
+  doc.h3PromptMode = H3_PROMPT_MODE;
+  for (const ep of doc.episodes) {
+    for (const seg of ep.segments) {
+      if (seg.cuts.length <= 1) continue;
+      const old = seg.h3Prompt;
+      const refs = h3ReferencePlan(seg.cuts);
+      const detailed = h3FieldValue(old, 0);
+      const soundscape = h3FieldValue(old, 1);
+      const music = h3FieldValue(old, 2);
+      seg.h3Prompt = [
+        H3_REF_FIELDS[0], refs.map((ref) => ref.definition).join('\n'), '',
+        H3_REF_FIELDS[1], `[keyframe completion + reference generation] The target video begins from <Picture 1> and uses ${refs.slice(1).map((ref) => ref.label).join(', ')} as storyboard references for the ordered shot flow.`, '',
+        H3_REF_FIELDS[2], refs.map((ref) => ref.retention).join('\n'), '',
+        H3_REF_FIELDS[3], detailed, '',
+        H3_REF_FIELDS[4], soundscape, '',
+        H3_REF_FIELDS[5], music,
+      ].join('\n');
+    }
+  }
+  return doc;
+};
 
 const cameraPlanDoc = () => {
   const plan = {
@@ -414,6 +446,27 @@ eq(h3AlignmentLine([{ seconds: 5 }], 'zh'), '目标视频在 0.00 秒处完全�
   eq(h3FieldValue(prompt, 1), 'ambience and impact', '能提取 overall_soundscape 正文');
   eq(h3FieldValue(prompt, 2), 'strings and brass', '能提取 non_diegetic_music 正文');
 }
+eq(h3ModeForCuts([{ seconds: 5 }]), 'I2VA', 'official-auto：单分镜自动走 I2VA');
+eq(h3ModeForCuts([{ seconds: 3 }, { seconds: 4 }]), 'Ref2VA', 'official-auto：多分镜自动走 Ref2VA');
+eq(h3ModeForCuts([{ seconds: 3 }, { seconds: 4 }], null), 'legacy-multiframe', '旧 JSON 保留原多图格式');
+{
+  const refs = h3ReferencePlan([{ seconds: 3 }, { seconds: 4 }]);
+  ok(refs[0].definition.includes('first frame of [Shot 1]') && refs[0].retention.includes('fully_preserved'), 'Ref2VA 主图定义与保真前缀可确定性生成');
+  ok(refs[1].definition.includes('storyboard reference for [Shot 2] at 3.00 seconds'), 'Ref2VA 子图定义带推导切点');
+  const prompt = `${H3_REF_FIELDS[0]}\n${refs.map((x) => x.definition).join('\n')}\n\n${H3_REF_FIELDS[1]}\n[keyframe completion + reference generation] test\n\n${H3_REF_FIELDS[2]}\n${refs.map((x) => x.retention).join('\n')}\n\n${H3_REF_FIELDS[3]}\n[Shot 1] aa <Picture 1>\n[Shot 2] At 00:03.000, bb <Picture 2>\n\n${H3_REF_FIELDS[4]} ambience\n\n${H3_REF_FIELDS[5]} N/A`;
+  const slices = h3CutSlices(prompt, 2);
+  ok(slices[0].includes('aa') && slices[1].includes('bb'), 'Ref2VA 从 detailed_description 按 Shot 切片');
+  eq(h3FieldValue(prompt, 1), 'ambience', 'Ref2VA 仍按语义提取 overall_soundscape');
+}
+eq(Object.keys(H3_STYLE_PRESETS).length, 8, 'MiniMax-H3 其余八个技能恰好拆成八种 H3 风格');
+ok(h3StyleDirective('paper-collage-explainer-generator').includes('halftone'), 'H3 风格能取得英文确定性指纹');
+ok(renderH3StyleCatalog().includes('handdrawn-live-video-generator'), 'H3 风格目录列出全部预设');
+{
+  const scaffold = buildH3PromptScaffold({ id: 'E01-01', cuts: [{ seconds: 3 }, { seconds: 4 }] }, { h3Style: 'paper-collage-explainer-generator' });
+  ok(scaffold.startsWith('subject_definitions:') && scaffold.includes('detailed_description:'), '多分镜骨架自动输出 Ref2VA 六段式');
+  ok(scaffold.includes(h3StyleDirective('paper-collage-explainer-generator')), 'H3 骨架自动把所选风格指纹放进 Shot 1');
+  ok(scaffold.includes('[Shot 2] At 00:03.000,'), 'H3 骨架的 Shot 切点由 cuts 推导');
+}
 eq(segSeconds({ cuts: [{ seconds: 3 }, { seconds: 4.5 }] }), 7.5, '段秒数 = 分镜求和');
 
 /* ---------------- computeStats ---------------- */
@@ -438,6 +491,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
 eq(gateReport(FIXTURE, CTX).length, 23, '二十三道门');
+ok(gateReport(officialAutoDoc(), CTX).every((g) => g.ok), 'official-auto 把多分镜切换为 Ref2VA 后全部门通过');
 {
   const gates = gateReport(FIXTURE, {});
   ok(gates.every((g) => g.ok), '不带上游也通过（对账门跳过）');
@@ -698,6 +752,20 @@ ok(gate(FIXTURE, 'script-state-link', CTX).ok && gate(FIXTURE, 'script-state-lin
   seg.h3Prompt = seg.h3Prompt.replace('overall_soundscape:', 'ambient_sound:');
   ok(gate(doc, 'h3-structure').detail.includes('核心字段'), '三字段缺失被拦');
 }
+{
+  const doc = officialAutoDoc();
+  const seg = doc.episodes[0].segments[0];
+  seg.h3Prompt = seg.h3Prompt.replace('subject_definitions:', 'definitions:');
+  const g = gate(doc, 'h3-structure');
+  ok(!g.ok && g.detail.includes('subject_definitions'), 'Ref2VA 必须以官方 subject_definitions 字段开头');
+}
+{
+  const doc = officialAutoDoc();
+  const seg = doc.episodes[0].segments[0];
+  const ref = h3ReferencePlan(seg.cuts)[1];
+  seg.h3Prompt = seg.h3Prompt.replace(ref.retention, `${ref.label}: weak_reference - changed`);
+  ok(gate(doc, 'h3-structure').detail.includes('fully_preserved'), 'Ref2VA 每张分镜参考图必须有 fully_preserved 记录');
+}
 // h3-dialogue
 {
   const doc = clone(FIXTURE);
@@ -706,6 +774,12 @@ ok(gate(FIXTURE, 'script-state-link', CTX).ok && gate(FIXTURE, 'script-state-lin
   const g = gate(doc, 'h3-dialogue');
   ok(!g.ok, '台词没进 <d> 块被拦');
   ok(gate(doc, 'h3-dialogue', {}).detail.includes('跳过'), '没给剧本时本门跳过并明说');
+}
+{
+  const doc = clone(FIXTURE);
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace('(S1) calls', '(S9) calls');
+  const g = gate(doc, 'h3-dialogue');
+  ok(!g.ok && g.detail.includes('(S1)'), '说话人编号没有按本段首个发声顺序稳定复用时被拦');
 }
 // h3-lang — 语言与设定双向对账（默认英文 = 官方口径）
 {
@@ -717,6 +791,11 @@ ok(gate(FIXTURE, 'script-state-link', CTX).ok && gate(FIXTURE, 'script-state-lin
   const doc = clone(FIXTURE);
   doc.promptLang = 'zh';
   ok(!gate(doc, 'h3-lang').ok, '设定中文、正文却是英文被拦——语言开关双向都管');
+}
+{
+  const doc = officialAutoDoc();
+  doc.promptLang = 'zh';
+  ok(gate(doc, 'h3-lang').detail.includes('official-auto'), 'official-auto 按官方规范固定英文');
 }
 {
   const doc = clone(FIXTURE);
@@ -1041,6 +1120,25 @@ ok(gate(FIXTURE, 'candidate-grid-selection', CTX).ok && gate(FIXTURE, 'candidate
   }
   ok(gate(doc, 'style-phrase').ok, '国风水墨分镜统一带风格短语时通过');
 }
+{
+  const doc = officialAutoDoc();
+  doc.h3Style = 'paper-collage-explainer-generator';
+  const directive = h3StyleDirective(doc.h3Style);
+  for (const ep of doc.episodes) {
+    for (const seg of ep.segments) {
+      seg.h3Prompt = seg.h3Prompt.replace(`${H3_REF_FIELDS[3]}\n[Shot 1]`, `${H3_REF_FIELDS[3]}\n[Shot 1] ${directive}.`);
+    }
+  }
+  ok(gate(doc, 'style-phrase').ok, '所选 H3 风格指纹逐段进入 Shot 1 时通过');
+  doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt.replace(`${directive}.`, '');
+  const g = gate(doc, 'style-phrase');
+  ok(!g.ok && g.detail.includes('半调纸拼贴'), '任一段漏掉 H3 风格指纹会点名失败');
+}
+{
+  const doc = clone(FIXTURE);
+  doc.h3Style = 'no-such-style';
+  ok(!gate(doc, 'style-phrase').ok, '未知 h3Style 被拦');
+}
 
 /* ---------------- 镜头配方卡库（可选挂载） ---------------- */
 /*
@@ -1218,9 +1316,20 @@ eq(GATE_LOG, '.gates.jsonl', '日志文件名固定');
   const m = pack.manifest.find((x) => x.segment === 'E01-01');
   eq(m.pictures.join(','), 'E01-01/f1.png,E01-01/f2.png,E01-01/f3.png,E01-01/f4.png', 'Picture 序 = 文件夹里的 f1..fn');
   eq(m.cutStarts.join(','), '0,3,6,10', 'manifest 带切点时刻表');
+  eq(m.h3Mode, 'legacy-multiframe', '旧 storyboard 的 manifest 明确标出兼容模式');
+  eq(m.h3Style, null, '未选择 H3 风格时 manifest 明确为 null');
   eq(m.imagePrompts.join(','), 'E01-01/f1.prompt.md,E01-01/f2.prompt.md,E01-01/f3.prompt.md,E01-01/f4.prompt.md', 'manifest 带每切完整分镜图提示词路径');
   eq(m.missing.length, 4, '缺图逐张标注');
   ok(pack.missingTotal > 0, '缺图总数上报');
+}
+{
+  const doc = officialAutoDoc();
+  doc.h3Style = 'brand-promo-video-generator';
+  const pack = exportPack(doc, SCRIPT, { imageExists: () => false });
+  const m = pack.manifest[0];
+  eq(m.h3Mode, 'Ref2VA', 'official-auto 多分镜在 manifest 标出 Ref2VA');
+  eq(m.h3Style, 'brand-promo-video-generator', 'manifest 带所选 H3 风格 id');
+  ok(pack.files.find((f) => f.path === 'E01-01/prompt.md').content.includes('H3 风格 = **品牌宣传**'), 'prompt.md 头部展示 H3 风格');
 }
 {
   const pack = exportPack(FIXTURE, SCRIPT, { imageExists: () => true, dir: 'out' });
@@ -1270,6 +1379,7 @@ ok(validateStoryboard({ source: 'x', episodes: [] }).some((p) => p.includes('epi
 
 const seeded = seedFromScript(SCRIPT);
 eq(seeded.source, '渡口', 'seed 带剧名');
+eq(seeded.h3PromptMode, H3_PROMPT_MODE, '新 seed 默认开启官方 I2VA／Ref2VA 自动路由');
 eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
 eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
 eq(seeded.framePlanMode, FRAME_PLAN_MODE, 'seed 默认开启分镜图自适应画面密度');
@@ -1294,6 +1404,7 @@ ok(seeded.episodes[0].seedScenes[0].beats.some((b) => b.kind === 'line' && typeo
   eq(scene.beats[1].delivery, '压低声音，回答短促', 'seed 不再丢失 delivery');
 }
 eq(seedFromScript(SCRIPT, [2, 3]).episodes.map((e) => e.ep).join(','), '2,3', '--eps 区间过滤');
+eq(seedFromScript(SCRIPT, [1, 1], { h3Style: '3d-animation-short-generator' }).h3Style, '3d-animation-short-generator', 'seed 可选写入八种 H3 风格之一');
 eq(seedFromScript({}).episodes.length, 0, '空剧本不崩');
 
 /* ---------------- slug / 枚举 ---------------- */
@@ -1310,6 +1421,7 @@ const md = renderMarkdown(FIXTURE, CTX);
 ok(md.includes('# 渡口 · 分镜（第 1 集）'), 'md 标题');
 ok(md.includes('### E01-01 · 渡口栈桥（浓雾清晨）'), 'md 段头带场景名与光照');
 ok(md.includes('H3 视频提示词'), 'md 带逐段 H3 提示词');
+ok(md.includes('legacy-multiframe · 基础'), 'md 显示旧 H3 模式与基础风格');
 ok(md.includes('How the reference pictures align'), '多分镜段的对齐指令完整可复制');
 ok(md.includes('[Shot 2] At 00:03.000,'), '切点时刻原样进 md');
 ok(md.includes('老周'), 'md 说话人显示名字');
@@ -1342,6 +1454,7 @@ ok(html.includes('#2 未生成'), '子分镜图缺图有小占位');
 ok(html.includes('class="shots clip"'), '段卡区默认截断');
 ok(html.includes('展开全部段'), '每集自带展开按钮');
 ok(html.includes('H3 提示词'), '段卡带 H3 提示词面板');
+ok(html.includes('legacy-multiframe · 基础'), 'html 提示词面板显示实际 H3 模式与风格');
 ok(html.includes('class="duo"'), '分镜列表与提示词面板五五分栏');
 ok(html.includes('static shot'), '英文提示词正文进面板');
 ok(html.includes('integrated_multimodal_description'), '官方骨架字段进面板');

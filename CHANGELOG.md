@@ -1,5 +1,13 @@
 # Changelog
 
+## novel-storyboard 1.16.0 · 官方 H3 自动路由与八种风格 — 2026-08-28
+
+- 新 seed 写入 `h3PromptMode: "official-auto"`：单 cut 使用 I2VA；多 cut 使用 Ref2VA 六段式，不再把多张 Shot 参考图伪装成首尾帧模式。旧 storyboard 未声明该字段时继续兼容原多图对齐格式。
+- Ref2VA 的 Picture 定义、`fully_preserved` 记录、对应 Shot 和切点时刻确定性对账；声景/配乐禁止重复 `<d>`。
+- 台词门从“全提示词找到原文”收紧为“正确 Shot 找到原文”，并按本段首次发声顺序检查稳定 `(Sx)`；画外音检查官方 off-screen voiceover 与闭唇句式。
+- MiniMax-H3 官方其余 8 个技能拆成可选 `h3Style`。只抽取视听、运动、转场、文字和声音语法，不继承 Hub 流程、固定时长或业务内容；`h3-styles` 命令可列出/打印确定性风格指纹。
+- `export`、Markdown 与 HTML 报告显示实际 H3 模式和风格；`h3-scaffold` 可按 cuts 生成可填充骨架；自测 394 → 424 项，23 道门数量不变。
+
 ## 五段报告合成一张单页 — 2026-08-19
 
 **新增 `scripts/report.mjs`：左侧导航，有哪几段就出哪几个面板**

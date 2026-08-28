@@ -83,9 +83,9 @@
 
 对应字段写 `non_diegetic_music: N/A`；中文模式写「无」。不要为了通过丰富度门给每段硬塞配乐。
 
-## integrated_multimodal_description 顺序
+## integrated_multimodal_description / detailed_description 顺序
 
-每个 `[Shot k]` 使用自然段，不显示 JSON 字段名，顺序固定：
+I2VA 写入 `integrated_multimodal_description`，Ref2VA 写入 `detailed_description`；每个 `[Shot k]` 使用自然段，不显示 JSON 字段名，顺序固定：
 
 1. 切点时刻、转场与 `<Picture k>` 构图锚定。
 2. 景别、`visualPlan.environment`、`visualPlan.lighting`。

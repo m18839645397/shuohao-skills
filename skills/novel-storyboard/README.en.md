@@ -9,12 +9,13 @@ segment = one video-generation call, new seeds default to 5–10s, never crosses
  ├─ cuts × 3–5 = intra-segment edits, 2–5s each (hard gate), each claiming script beats
  ├─ frames    = one keyframe per cut: a pre-action entry frame pinned at 0.00s,
  │              sub-frames pinned at their own cut marks
- └─ H3 prompt = one per segment; multi-picture alignment + [Shot k] cut times audited verbatim
+ └─ H3 prompt = one per segment; new seeds use I2VA for one frame and Ref2VA for multiple references
 ```
 
 - **A dialogue's shot–reverse-shot lives inside one segment, one generation** — wide, close on A, close on B are separate 2–5s cuts, each composition controlled by its own storyboard frame instead of gambling on prose
-- **The alignment instruction is derived, not written** — the multi-picture line (`Picture 2 aligns with the 3.00-second mark…`) and every `[Shot k] At 00:0X.XXX` cut time are computed from cut durations, and validate audits them **character for character**: change a duration without updating the prompt and it blocks
-- **Prompts follow the official spec: English by default, one shot per line** — each shot on its own line with its cut time; dialogue, lyrics and on-screen text keep their original language per the official rules (`<d>[Chinese] …</d>` verbatim). `promptLang: 'zh'` switches the whole prompt to Chinese. The writing spec is internalized as `references/h3-prompt.md` — **this skill is self-contained and depends on no external skill**
+- **H3 mode is derived from the reference count** — new seeds set `h3PromptMode: "official-auto"`: one cut uses the three-field I2VA form; multiple cuts use the six-section Ref2VA form. Picture definitions, `fully_preserved` records, matching Shots and cut times are audited verbatim. Legacy multi-picture JSON remains compatible
+- **Prompts follow the official spec: English by default, one shot per line** — dialogue, lyrics and visible text keep their original language (`<d>[Chinese] …</d>` verbatim); `(Sx)` IDs are stable in vocal-event order and voiceover requires closed lips. Ref2VA is English-only; legacy mode still supports `promptLang: 'zh'`
+- **Eight optional H3 styles** — the other eight official MiniMax skills become `h3Style` presets: minimalist product ad, stylized 3D, papercraft stop motion, brand promo, lyric MV, co-op menu, halftone paper collage and hand-drawn/live-action fusion. Only their audiovisual motion grammar is inherited, not their business workflows
 - **Every cut carries an executable camera plan** — new seeds enable `cameraPlanMode: "cinematic-controlled"`: start position, pace/magnitude, target, focus, end composition, intent and transition are copied into that cut's own `[Shot k]`; static is the default and each cut gets one primary move
 - **Final prompts carry production-level detail** — `promptDetailMode: "production-rich"` requires environment, lighting, subject, action, effects and continuity per cut, plus four-layer soundscape and scored music style/instrumentation/arc/sync per segment
 - **Storyboard frames receive role-driven visual density** — `framePlanMode: "adaptive-density"` selects sparse / balanced / rich by shot function; reports and export deterministically compile the full image prompt instead of sending the thin base `frame` to the image model
@@ -44,13 +45,13 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | Segment ID discipline | `E01-01` format, sequential — the segment ID is the asset filename |
 | Size phrase | the English shot-size phrase must appear in the cut's frame prompt |
 | Camera execution | the H3 camera term appears inside its own `[Shot k]`; in cinematic mode the five prompt-ready camera-plan fields, pace/magnitude and transition are audited verbatim, static/dynamic settings must agree, and conflicting moves in one cut fail |
-| **H3 structure** | the alignment line is **derived from the cut structure and audited verbatim**; three fields in order; every `[Shot k]` cut time equals the running sum of prior cut durations |
-| **H3 dialogue verbatim** | every claimed line appears verbatim inside a `<d>` block — one changed punctuation mark fails |
+| **H3 structure** | one frame routes to I2VA and multiple references to Ref2VA; field order, Picture definitions, retention, matching Shots and cut times are audited verbatim |
+| **H3 dialogue verbatim** | every claimed line appears verbatim in the correct Shot; `(Sx)` IDs stay stable and voiceover requires closed lips |
 | **Prompt language consistency** | prose audited both ways against `promptLang`: Chinese drama written in English fails, English mode mixing Chinese fails |
 | **Production prompt richness** | six visual-plan layers per cut, four soundscape layers per segment and four scored-music layers appear verbatim in the correct H3 fields with language-aware minimum detail; no music is explicit N/A/无 |
 | **Adaptive frame density** | `framePlan` assigns sparse / balanced / rich content budgets by establishing / dialogue / reaction / action / reveal / insert / atmosphere role; structured counts, sensible role pairings and the compiled image prompt are audited deterministically |
 | **Cut and segment continuity** | eight end/start state fields match across adjacent cuts; cut point, motion, light, audio and axis bridges enter the right fields; continuous segments audit state and handoff while explicit scene/time jumps may break it |
-| **Style phrase** | realistic / cinematic / naturalistic / ghibli / inkwash stay name-aligned across the pipeline; naturalistic uses ordinary people, real locations, available light and observational framing |
+| **Style phrase** | static `style` stays consistent; when `h3Style` is selected its deterministic fingerprint appears in every segment's Shot 1 |
 | Frame-prompt hygiene | English-only, non-empty |
 | No character names | frame prompts always; the H3 prompt only in English mode (Chinese prompts allow names — identity is anchored by the frames). Checked with `--outline` / `--cast`; skipping is **announced** |
 | Reference integrity | scene index / characters / props all audited against the script scene |
@@ -109,6 +110,9 @@ novel-storyboard → storyboard.json (how to shoot: segments, cuts, frames, H3 p
 
 ```bash
 node scripts/novel-storyboard.mjs seed script.json --eps 1
+node scripts/novel-storyboard.mjs h3-styles --lang en
+node scripts/novel-storyboard.mjs seed script.json --eps 1 --h3-style paper-collage-explainer-generator
+node scripts/novel-storyboard.mjs h3-scaffold sb.json --segment E01-01
 node scripts/novel-storyboard.mjs validate sb.json --script script.json --outline outline.json --cast cast.json
 node scripts/novel-storyboard.mjs checkup sb.json --script script.json
 node scripts/novel-storyboard.mjs validate sb.json --script script.json --shots /path/to/cards   # optional recipe gate
@@ -131,7 +135,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-388 assertions — cinematic and naturalistic live action, rough grids, human selection, edge plans, entry frames and all twenty-three gates. No model calls.
+424 assertions — I2VA/Ref2VA routing and scaffolding, eight H3 styles, stable speaker IDs, cinematic and naturalistic live action, rough grids, human selection, edge plans, entry frames and all twenty-three gates. No model calls.
 
 The bundled `examples/渡口-storyboard.json` remains the complete legacy-compatibility fixture for rhythm, alignment and recipes. New adaptive frame structure is demonstrated in `references/frame-density.md` and exercised by the selftest fixtures.
 

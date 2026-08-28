@@ -1,66 +1,120 @@
-# H3 视频提示词 · 写法规范（内化版）
+# H3 视频提示词 · 官方结构内化版
 
-方法论学自 MiniMax-H3 官方提示词指南（I2VA / 多图对齐模式），**内化成本 skill 自带文档——不依赖任何外部 skill**。写每段的 `h3Prompt` 照这份做；先读 `camera-direction.md`、`prompt-detail.md` 和 `continuity.md`，结构、投产信息与镜间状态都有质量门逐字对账。
+方法论来自 MiniMax-H3 官方 `h3-prompt-writing`（2026-08-28 核对 commit `d21241f0a4b3acbb34c97dae47fa417b7065e438`），已内化到本 skill，不要求另装外部技能。写每段 `h3Prompt` 前先读 `camera-direction.md`、`prompt-detail.md`、`continuity.md`；选了 `h3Style` 再读 `h3-styles.md`。
 
-## 语言分工
+## 先定生成模式
 
-- **默认整条英文**（`promptLang: 'en'`）——官方规范的口径：正文、对齐指令、字段名、镜头标记全英文，禁角色名（用 an old ferryman 这类通用身份）
-- 三样东西保留原文语言（官方规定）：**台词**（`<d>[Chinese] …</d>` 逐字原文，一个标点都不许动，门盯着）、歌词、画面里可见的文字（英文双引号原样引用）
-- `promptLang: 'zh'` 可切整条中文（对齐指令、字段名、镜头标记都有中文版，人名放行）——偏离官方推荐的备选项，实测中文效果不稳就回英文
+新 seed 写入 `h3PromptMode: "official-auto"`，按每段实际参考图自动路由：
 
-## 结构（validate 逐字对账的部分）
+- **1 个 cut / 1 张首帧图 → I2VA**：从 `<Picture 1>` 的 0.00 秒入口态向后发展。
+- **2 个以上 cut / 每切一张分镜参考图 → Ref2VA**：`<Picture 1>` 是首帧，其余 Picture 是各 Shot 的 storyboard reference；使用官方六段式。
+- 不把多张 Shot 参考图伪装成 FL2VA。FL2VA 只表达首帧到末帧的连续路径，通常偏单镜；当前多切分镜应走 Ref2VA。
+- 旧 JSON 没有 `h3PromptMode` 时继续兼容原来的多图对齐行，便于回放和重渲染；新项目不要再照旧格式起稿。
+
+官方自动模式默认且推荐 `promptLang: "en"`。Ref2VA 六段式按官方要求全英文；台词、歌词和画面可见文字保留原语言。
+
+## I2VA：单分镜段
 
 ```text
-How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 2) aligns with the 3.00-second mark of the target video; ….
-（单分镜的段改用官方 I2VA 固定句：For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.）
+For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
 
 integrated_multimodal_description:
-[Shot 1] Cinematic, live-action, cold gray-green palette. 先写 `motion begins only after the 0.00-second entry frame`，确认 <Picture 1> 是 sourceState.before / startState 的动作前入口态；随后才把 before → after 翻成可见动作，再写 visualPlan、cameraPlan、结束状态、连续性、导演意图和台词（全英文）。
-[Shot 2] At 00:03.000, continue directly from Shot 1 at the same instant, then anchor <Picture 2>: ……（**每个镜头独立一行**；先承接上一镜的状态和动作桥，再改变景别/机位）
+[Shot 1] ...
 
-overall_soundscape: audioPlan.soundscape 的基底、渐强、事件、余韵四层。不复述台词。
+overall_soundscape: ...
 
-non_diegetic_music: 有配乐时写 audioPlan.music 的类型、配器、动态曲线、同步点；没有就写 N/A。
+non_diegetic_music: ...
 ```
 
-中文模式（promptLang=zh）的对应 token：`参考图与目标视频的对齐——` / `整体视听描述：` / `[镜头 k] 于 00:0X.XXX，`，配乐没有写「无」。
+`[Shot 1]` 先建立画风、构图、主体、空间与 `<Picture 1>` 的身份/位置锚点，尽早写入 `motion begins only after the 0.00-second entry frame`，再展开可见动作、运镜、状态变化、同步声音和台词。
 
-首行对齐指令和切点时刻**由分镜秒数推导**，改了秒数忘改提示词，validate 当场拦。
+## Ref2VA：多分镜段
+
+字段顺序固定：
+
+```text
+subject_definitions:
+<Picture 1> is the first frame of [Shot 1] at 0.00 seconds, defining its viewpoint, subject placement, identity anchors, and pre-action state.
+<Picture 2> is a storyboard reference for [Shot 2] at 3.00 seconds, defining its viewpoint, subject placement, identity anchors, and cut-entry state.
+
+summary:
+[keyframe completion + reference generation] The target video begins from <Picture 1> and uses <Picture 2> as a storyboard reference for the ordered shot flow.
+
+retention_analysis:
+<Picture 1> ([Shot 1] first frame): fully_preserved - preserve the referenced composition, subject placement, identity anchors, and pre-action state at 0.00 seconds.
+<Picture 2> ([Shot 2] storyboard reference at 3.00 seconds): fully_preserved - preserve the referenced viewpoint, subject placement, identity anchors, and cut-entry state.
+
+detailed_description:
+[Shot 1] ... <Picture 1> ...
+[Shot 2] At 00:03.000, ... <Picture 2> ...
+
+overall_soundscape: ...
+
+non_diegetic_music: ...
+```
+
+Picture 定义、保真前缀和秒数来自 `h3ReferencePlan(cuts)`，质量门逐字检查；复制模板后再在每行后补具体人物、构图、道具与状态，不要改前缀。每个 `[Shot k]` 必须引用对应 `<Picture k>`。`summary` 不讲剧情梗概，只说明目标视频和参考关系。
+
+cuts 完成后可直接生成不含剧情臆测的可填充骨架：
+
+```bash
+node scripts/novel-storyboard.mjs h3-scaffold storyboard.json --segment E01-01
+```
+
+骨架中的方括号占位必须用真实 `visualPlan`、`cameraPlan`、状态、声音与台词填完，不能把占位原样交给 H3。
+
+## 每个 Shot 的写法顺序
+
+每个镜头独立一行。第一镜不写时间戳；后续镜头以推导切点开头：`[Shot 2] At 00:03.000, ...`。
+
+建议顺序：
+
+1. Shot 2 起先写 transition 与 `continue directly from Shot k at the same instant`；连续 segment 的 Shot 1 先写 segment handoff。
+2. 锚定本 Shot 的 `<Picture k>`、`sourceState.before` / `startState`、人物位置、道具持有人、构图和光位。
+3. 写 `visualPlan.environment / lighting / subject / action / effects / continuity` 原文。
+4. 把 before → after 翻成可观察的动作；不要写剧情总结或抽象情绪。
+5. 自然写入一个主运镜，以及有意义时的幅度与速度，再写 cameraPlan 的起点、目标、焦点、结束构图和意图。
+6. 写 diegetic sound、人物反应、对白；停在 `endState`，把状态交给下一 Shot。
+
+选了 `h3Style` 时，运行 `h3-styles <id> --lang en`，把输出的确定性风格指纹逐字放在每段视听描述的 `[Shot 1]` 开头。风格不许覆盖剧情事实和参考图。
 
 ## 运镜
 
-- 先读 `camera-direction.md`。新 seed 默认 `cameraPlanMode: "cinematic-controlled"`，每切都填 `cameraPlan` 与 `transition`。
-- 词表 20 种（schema.md 的 camera 枚举）。**一切只用一个主运镜**，固定镜头默认；不要用否定句罗列其他运镜词。
-- 每个分镜的运镜词必须落在自己那一行里：英文用官方词（static shot / push in / tracking shot……），中文模式用词表中文词（固定/推/拉/跟拍……）。
-- 动态运镜的速度、幅度、转场 token，以及 `start` / `target` / `end` / `focus` / `intent` 五个 prompt-ready 原句必须逐字进入自己的 `[Shot k]`；质量门会对账。
-- `Static Shot` 必须用 `pace=static`、`magnitude=none`；POV 可以固定或移动，但固定时这两个值必须成对出现；其他运镜必须给非静态速度与非零幅度。
+- 官方词表见 `schema.md`；英文自然语言中表达，不在句尾堆标签。
+- 完整运镜由 **类型 + 幅度 + 速度** 组成；中等幅度/正常速度无意义时可省略，但新 `cameraPlanMode` 会要求结构化值与提示词对账。
+- 每切一个主运镜。固定镜头用 `Static Shot`；动态镜头不得再夹带其他冲突运镜词。
+- `cameraPlan.start / target / end / focus / intent`、速度、幅度、transition token 必须逐字进入自己的 Shot。
+- 轻微改景别或角度优先运镜；新信息、状态、时间或视点变化才切镜。
 
 ## 说话人与台词
 
-- 说话人第一次出现给足辨识信息（身份、年龄段、音色、语速），编号 `(S1)` `(S2)` 全段稳定；同说不同人用 `(S1,S2)`
-- `<d>` 里只放语言标签和台词原文；身份、音色、语气写在 `<d>` 外面
-- **画外音**：中文写「以画外音说（唇形完全闭合）」；英文用官方句式 `says in an off-screen voiceover … while their lips remain completely closed`
-- 画面里真实可见的文字（招牌、字条）用英文双引号原样引用，不翻译
+- `(S1)`、`(S2)` 按**本段真实发声顺序**分配；同一说话人跨 Shot 始终复用同一编号。质量门按剧本 speaker 对账。
+- 说话人第一次发声时，在 `<d>` 外写身份、年龄段、音色、语速/口音和表演动作；后续保留编号，不必重复长定义。
+- `<d>` 内只放语言标签和剧本原文，文字与标点不得改：`<d>[Chinese] 原台词。</d>`。
+- 多人同说用 `(S1,S2)`。
+- 画外音必须用 `says in an off-screen voiceover`，并在 `</d>` 后注明对应画面人物 `lips remain completely closed`。
+- 当前 beat 认领以整拍为单位，正常不会把一句台词拆到两个 Shot。导入外部数据确有跨切台词时，两部分都用 `<scenetrans>` 并说明声音连续；视频结尾截断语音用 `<cutoff>`，不要伪造完整句。
 
-## 声音字段的分工（踩过的坑）
+## 画面文字与音频分层
 
-- 台词、歌声、剧内音乐 → 描述字段；环境与动作声 → `overall_soundscape`；配乐 → `non_diegetic_music`
-- **声景也是动作指令**：画面动作改了，声景必须一起改——声景里写「铜铃在撞击时炸响」，视频就真把撞击演出来
-- 新 seed 默认 `promptDetailMode: "production-rich"`。逐切 `visualPlan` 六层、逐段 `audioPlan.soundscape` 四层和有配乐时的 `audioPlan.music` 四层必须逐字进入对应字段，详见 `prompt-detail.md`。
+- 画面真实可见的招牌、字条、歌词或 UI 文案用英文双引号包住，保留原文，不翻译。
+- 台词、歌声、剧内音乐、同步动作声写在视听描述中。
+- `overall_soundscape` 用 1–4 句汇总环境声、物理动作声和非语言人声，不重复 `<d>` 台词。
+- `non_diegetic_music` 用 1–3 句写观众听见、角色听不见的配器、速度、节奏和动态；不要只写“感人/电影感”。无配乐写 `N/A`。
+- 风格预设对声音有建议，但不能新增剧本没有的旁白、歌词、Logo、UI 文案或产品主张。
 
-## 关键帧怎么用
+## 关键帧与连续性
 
-- 静态关键帧先按 `frame-density.md` 填 `framePlan`，再使用报告或 export 生成的完整 imagePrompt 出图；不要把 JSON 里的基础 `frame` 直接交给图像模型。
-- 每段 f1 强制 `moment=entry`，逐项翻译 startState；H3 动作只能在0.00秒入口帧之后开始。详见 `frame-entry.md`。
-- 主分镜图（f1）钉 0.00 秒，是这一段世界观的完全参照；每个 `[Shot k]` 先锚定 `<Picture k>` 的构图与人物状态，再写动作展开
-- 动作遵守 novel-script 的**常见动作原则**：挑担上船、搭手卸担这类模型见过千万次的动作；精确物理交互、微表情不要写
-- 人物**此刻的位置状态**（已上船 / 在舱内）要和分镜图一致——图与文对不上，模型听图的，动作就乱
-- f2 起关键帧生成必须同时挂标准资产、本段 f1 和立即上一切；连续段的下一段 f1 还要挂上一段最后一帧。具体调用见 `frame.md` 和 `continuity.md`。
+- f1 是 0.00 秒动作前 entry state；动作只能在入口帧之后开始。
+- Ref2VA 的 f2...fN 是 Shot 规划参考，不是让模型静止复刻整段；每个 Shot 先承接状态，再沿可见动作走向下一状态。
+- `sourceState` 是剧本事实，`startState/endState` 是摄影翻译，`transitionPlan/handoff` 是跨切桥。三层不能互相替代。
+- 人物位置、姿势、视线、道具、光效、银幕方向和声音桥都要从上一末态接到下一首态；换场或时间跳跃必须显式标记。
 
-## 连续性
+## 自检
 
-- 新 seed 默认 `continuityMode: "state-linked"`。
-- 上游剧本也启用状态链时，cut 先按认领节拍复制 `sourceState.before/after`。`[Shot k]` 的动作必须从 before 开始、停在 after，不得重新发明道具持有人或动作阶段。
-- 相邻 cut 的 `endState` 与 `startState` 八项逐字相等；Shot 2 起填 `transitionPlan`，明确切点、动作、光线、声音和轴线怎样跨切。
-- Shot 2 起必须含 `continue directly from Shot k at the same instant`；中文使用「在同一时刻直接承接镜头 k」。转场桥的视觉字段进入当前 Shot，audioCarry 进入 overall_soundscape。
-- 同场连续 segment 用 `handoff.kind=continuous`，段首写 `continue directly from segment E01-01 at the same instant`；换场/时间跳跃分别标记 `scene-change` / `time-jump`。
+- 模式与参考数匹配：单图 I2VA，多图 Ref2VA。
+- 字段名、顺序、Picture 定义、保真记录和 Shot 时刻没有漂。
+- 每个 Picture 在对应 Shot 出现；第一镜无时间戳，后续切点等于前面 cut 秒数之和。
+- 每句台词在正确 Shot 的 `<d>` 中，前面有正确 `(Sx)`；画外音闭唇。
+- 风格指纹只在选了 `h3Style` 时要求，并逐段进入 Shot 1。
+- 声景和配乐不重复 `<d>`；视觉、声音和状态变化彼此一致。

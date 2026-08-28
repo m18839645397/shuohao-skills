@@ -8,12 +8,13 @@
 段（segment）＝ 一次视频生成调用，新 seed 默认 5–10 秒，不跨场次
  ├─ 分镜（cut）× 3–5 ＝ 段内剪切，每切 2–5 秒（硬门），各自认领剧本节拍
  ├─ 分镜图 ＝ 每切一张关键帧（<段号>/f1..fN.png）：主图钉 0.00 秒，子图钉各自切点
- └─ H3 提示词 ＝ 一段一条，多图对齐指令 + [Shot k] 切点时刻逐字对账
+ └─ H3 提示词 ＝ 一段一条；新 seed 单图 I2VA、多图 Ref2VA，Picture/Shot/切点逐字对账
 ```
 
 - **两人对话的正反打在一段里一次生成**——全景、A 近景、B 近景各是一个 2–5 秒的分镜，每格构图由自己的分镜图控制，不靠文字赌
-- **对齐指令是推导出来的，不是写出来的** — 多图对齐句式（`Picture 2 aligns with the 3.00-second mark…`）和 `[Shot k] At 00:0X.XXX` 切点时刻全部由分镜秒数推导，validate **逐字对账**：改了秒数忘改提示词，当场拦
-- **提示词按官方口径默认英文、逐镜换行** — 每个镜头独立一行、切点时刻开头；台词/歌词/画面文字按官方规定保留原文（`<d>[Chinese] …</d>` 逐字）。`promptLang: 'zh'` 可切整条中文（对齐指令、字段名、镜头标记都有中文版）。写法规范已内化为 `references/h3-prompt.md`——**本 skill 自包含，不依赖任何外部 skill**
+- **H3 模式由参考图数量推导** — 新 seed 写 `h3PromptMode: "official-auto"`：单 cut 用 I2VA 三字段；多 cut 用 Ref2VA 六字段，Picture 定义、`fully_preserved` 记录、对应 Shot 与切点时刻全部由结构推导并逐字对账。旧 JSON 原多图格式继续兼容
+- **提示词按官方口径默认英文、逐镜换行** — 每个镜头独立一行；台词/歌词/画面文字保留原文（`<d>[Chinese] …</d>` 逐字）。说话人 `(Sx)` 按本段发声顺序稳定复用，画外音检查闭唇。Ref2VA 强制英文；旧模式仍兼容 `promptLang: 'zh'`
+- **8 种可选 H3 风格** — MiniMax 官方其余 8 个技能拆为 `h3Style`：极简产品广告、风格化 3D、纸艺定格、品牌宣传、音乐美学贴字、双人游戏菜单、半调纸拼贴、手绘实拍融合。只继承视听/运动风格，不继承业务流程；详见 `references/h3-styles.md`
 - **每切有可执行的摄影计划** — 新 seed 默认开启 `cameraPlanMode: "cinematic-controlled"`：起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场逐字进入自己的 `[Shot k]`；固定镜头默认，一切只用一个主运镜
 - **最终提示词达到投产丰富度** — `promptDetailMode: "production-rich"` 要求逐切写空间、光线、主体、动作、效果、连续性，逐段写四层声景和配乐类型/配器/动态/同步点；不是靠字数堆形容词
 - **分镜图按叙事需要自动分配信息量** — `framePlanMode: "adaptive-density"` 按镜头功能选择 sparse / balanced / rich；报告和 export 确定性组装完整 imagePrompt，不再把薄的基础 `frame` 直接交给图像模型
@@ -43,13 +44,13 @@
 | 段号纪律 | `E01-01` 格式、按顺序连号——段号就是素材文件名 |
 | 景别短语 | `close-up` 这类英文短语必须出现在分镜图提示词里 |
 | 运镜与执行计划 | 运镜直接用 H3 官方词表且进入自己的 `[Shot k]`；电影化模式下 `cameraPlan` 五个 prompt-ready 字段、速度/幅度与转场逐字对账，固定/动态参数匹配，同切冲突运镜被拦 |
-| **H3 结构** | 首行对齐指令**由分镜结构按语言推导、逐字对账**；三字段按序；每个 `[Shot k]` 的切点时刻等于前面分镜秒数的累计 |
-| **H3 台词逐字** | 认领的每句台词逐字出现在 `<d>` 块里，改一个标点都过不去 |
+| **H3 结构** | 单图 I2VA、多图 Ref2VA；字段顺序、Picture 定义、保真关系、对应 Shot 与切点时刻逐字对账 |
+| **H3 台词逐字** | 认领台词在正确 Shot 逐字进 `<d>`；`(Sx)` 稳定，画外音注明闭唇 |
 | **提示词语言一致** | 正文语言与 `promptLang` 双向对账：设定中文写成英文、设定英文混进中文，都拦 |
 | **投产提示词丰富度** | 逐切 `visualPlan` 六层、逐段声景四层和有配乐时的音乐四层逐字进入对应 H3 字段，并设中英文最低信息量；无配乐明确 N/A/无 |
 | **分镜图自适应密度** | `framePlan` 按 establishing / dialogue / reaction / action / reveal / insert / atmosphere 分配 sparse / balanced / rich 内容预算；字段数量、合理搭配和完整 imagePrompt 确定性检查 |
 | **镜间与段间连续性** | 相邻 cut 的八项末态/首态逐字相等，Shot 2 起切点/动作/光线/声音/轴线桥进入正确字段；同场连续 segment 的状态和 handoff 对账，换场/时间跳跃显式豁免 |
-| **风格短语统一** | `style` 支持 realistic / cinematic / naturalistic / ghibli / inkwash；现实风格强调日常真人、现实地点、可用光与中性曝光 |
+| **风格短语统一** | 静态 `style` 保持同剧画风；选了 `h3Style` 后，其确定性风格指纹逐段进入 Shot 1 |
 | 分镜图提示词卫生 | 全英文非空 |
 | 提示词不含角色名 | 分镜图提示词恒查；H3 提示词仅英文模式查（中文放行，身份靠分镜图锚定）。给 `--outline` / `--cast` 才查，不给**明说跳过** |
 | 引用对账 | 场次/人物/道具全部对账剧本该场 |
@@ -103,7 +104,7 @@ novel-script     → script.json     （戏：场次、节拍、台词）
 novel-storyboard → storyboard.json （怎么拍：段、分镜、分镜图、H3 提示词）
 ```
 
-- `seed <script.json> --eps 1-3` 确定性展开每场节拍的编号、秒数、说话人、`delivery`；状态链剧本还带逐拍 `stateBefore/stateAfter`，并默认写入 5–10 秒段长
+- `seed <script.json> --eps 1-3 [--h3-style <id>]` 确定性展开每场节拍的编号、秒数、说话人、`delivery`；状态链剧本还带逐拍 `stateBefore/stateAfter`，并默认写入 5–10 秒段长与官方 H3 自动路由
 - `validate --script` 是硬前提（分镜离开剧本没有意义）；`--outline` / `--cast` 查提示词人名，`--art` 让报告显示场景名并在批次单嵌设定图
 - 分镜图出图走 codex `$imagegen`，场景/角色/道具设定图当 `-i` 参考图；H3 提示词 + 整套分镜图直接下单给 MiniMax H3
 
@@ -111,6 +112,11 @@ novel-storyboard → storyboard.json （怎么拍：段、分镜、分镜图、H
 
 ```bash
 node scripts/novel-storyboard.mjs seed script.json --eps 1     # 切镜底稿
+node scripts/novel-storyboard.mjs h3-styles                    # 查看 8 种 H3 风格
+node scripts/novel-storyboard.mjs seed script.json --eps 1 \
+     --h3-style paper-collage-explainer-generator              # 可选套用一种风格
+node scripts/novel-storyboard.mjs h3-scaffold sb.json \
+     --segment E01-01                                           # cuts 完成后生成官方可填充骨架
 node scripts/novel-storyboard.mjs validate sb.json \
      --script script.json --outline outline.json --cast cast.json
 node scripts/novel-storyboard.mjs checkup sb.json --script script.json
@@ -138,11 +144,12 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 + �
 ```
 SKILL.md                 给 agent 读的工作流
 scripts/
-  novel-storyboard.mjs   seed / select / validate / checkup / render / export / slug
-  selftest.mjs           388 项断言，不调模型
+  novel-storyboard.mjs   seed / h3-styles / h3-scaffold / select / validate / checkup / render / export / slug
+  selftest.mjs           424 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
+  h3-styles.md           MiniMax 官方 8 个视频技能拆出的 H3 风格层
   camera-direction.md    克制电影化运镜：执行计划、转场、按节拍自动选择
   prompt-detail.md       投产级丰富提示词：六层视觉、四层声景、配乐动态
   candidate-grid.md      单图粗九宫格、人工顺序选择、edge-driven 运镜
@@ -164,6 +171,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-388 项断言，覆盖 cinematic、naturalistic现实分镜、九宫格、人工选择、edgePlans、入口帧和23道门。
+424 项断言，覆盖 I2VA/Ref2VA 自动路由与骨架、8 种 H3 风格、稳定说话人编号、cinematic、naturalistic 现实分镜、九宫格、人工选择、edgePlans、入口帧和 23 道门。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。

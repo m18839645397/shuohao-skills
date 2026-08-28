@@ -18,8 +18,9 @@ import { fileURLToPath } from 'node:url';
  *   分镜图       ＝ 每个分镜一张关键帧：第 1 个分镜的是主分镜图（钉在
  *                  0.00 秒），其余是子分镜图（各钉在自己的切点时刻）
  *
- * 一段的画面由这串分镜图 + 一条 H3 提示词共同控制：多图对齐指令
- * 把每张图钉在对应秒数上，[Shot k] 的切点时刻和分镜秒数逐一对账。
+ * 一段的画面由这串分镜图 + 一条 H3 提示词共同控制：新 seed 按官方
+ * h3-prompt-writing 结构自动选 I2VA（单图）或 Ref2VA（多图），旧 JSON
+ * 继续兼容原多图对齐行；[Shot k] 的切点时刻始终和分镜秒数逐一对账。
  * 多切一刀的成本几乎为零，所以不心疼分镜数量，只守节奏。
  */
 
@@ -292,6 +293,100 @@ export const STYLE_PRESETS = {
 };
 export const DEFAULT_STYLE = 'realistic';
 
+/**
+ * H3 风格预设：只抽取 MiniMax-H3 其余 8 个技能的视听／运动基因，不继承
+ * 它们的审批流程、固定时长、业务文案或 Hub 工具依赖。directive 是每段
+ * [Shot 1] 必须逐字带入的短指纹；详细路由见 references/h3-styles.md。
+ */
+export const H3_STYLE_PRESETS = {
+  'minimalist-product-ad-generator': {
+    zh: '极简产品广告',
+    sourceSkill: 'minimalist-product-ad-generator',
+    directive: {
+      en: 'Premium minimalist product-film language with clean negative space, material-faithful close views, one primary action per beat, restrained precise motion, and transitions driven by real edges, highlights, openings, rotations, or matched geometry',
+      zh: '高级极简产品片语言：干净留白、材质保真的近景、每拍一个主动作、克制精确的运动，并由真实边缘、高光、开合、旋转或匹配几何驱动转场',
+    },
+  },
+  '3d-animation-short-generator': {
+    zh: '风格化 3D 动画',
+    sourceSkill: '3d-animation-short-generator',
+    directive: {
+      en: 'Stylized high-end 3D animation with readable geometric silhouettes, tactile materials and warm subsurface scattering, expressive squash-and-stretch, anticipation, overshoot and follow-through, energetic but legible poses, never photoreal live action or plastic-toy stiffness',
+      zh: '高品质风格化 3D 动画：可读的几何剪影、可触材质与温润次表面散射，表演使用挤压伸展、预备、过冲和跟随，姿态有能量但清楚，拒绝真人写实与塑料玩具僵硬感',
+    },
+  },
+  'papercraft-stop-motion-explainer': {
+    zh: '纸艺定格',
+    sourceSkill: 'papercraft-stop-motion-explainer',
+    directive: {
+      en: 'Handmade papercraft stop motion in a layered miniature diorama with visible cardstock thickness, fibers, folds, cut edges and physical inter-layer shadows, using 2.5D parallax, hinged or slider-based segmented motion, brief pauses and tactile paper mechanics, never smooth CG morphing',
+      zh: '分层微缩纸雕舞台中的手工纸艺定格：可见卡纸厚度、纤维、折痕、剪裁边缘与层间实体投影，使用 2.5D 视差、铰链或滑轨式分段运动、短暂停顿和可触纸艺机关，拒绝丝滑 CG 变形',
+    },
+  },
+  'brand-promo-video-generator': {
+    zh: '品牌宣传',
+    sourceSkill: 'brand-promo-video-generator',
+    directive: {
+      en: 'Brand-promo motion language that keeps verified product or interface evidence readable, assigns one dominant action to each beat, drives transitions through product motion, cursor paths, scrolling, light, edges or matching geometry, and preserves clear copy and logo safe space',
+      zh: '品牌宣传动效语言：保持已核验的产品或界面证据可读，每拍只有一个主动作，由产品运动、光标路径、滚动、光线、边缘或匹配几何驱动转场，并保留清楚的文案与标识安全区',
+    },
+  },
+  'music-video-subtitle-generator': {
+    zh: '音乐美学贴字',
+    sourceSkill: 'music-video-subtitle-generator',
+    directive: {
+      en: 'Beat-synchronized music-video language with grainy editorial film and halftone-zine texture, hard or motion-matched cuts on rhythmic accents, spatial lyric typography as one dominant text event that never covers eyes or mouths, and continuous performance energy tied to one master groove',
+      zh: '卡拍音乐视频语言：粗颗粒编辑电影与半调 zine 质感，在节奏重音上硬切或动势匹配切，空间歌词文字每镜只做一个主文字事件且不遮眼口，表演能量始终绑定同一条主 Groove',
+    },
+  },
+  'co-op-game-intro-generator': {
+    zh: '双人游戏菜单',
+    sourceSkill: 'co-op-game-intro-generator',
+    directive: {
+      en: 'Co-op game-intro language with a clean high-impact console-menu composition, two identity-locked characters integrated with readable UI, a controlled five-color palette, bold single-line uppercase typography, unified rounded buttons and icons, and one clearly highlighted Continue interaction',
+      zh: '双人合作游戏开场语言：干净有冲击力的主机菜单构图，两名身份锁定角色与可读 UI 深度融合，色彩控制在五种以内，粗体单行大写字、统一圆角按钮与图标，并只突出一个 Continue 交互',
+    },
+  },
+  'paper-collage-explainer-generator': {
+    zh: '半调纸拼贴',
+    sourceSkill: 'paper-collage-explainer-generator',
+    directive: {
+      en: 'Premium editorial paper-collage stop motion with bold color fields, black-and-white halftone cut-outs, selective cardstock accents, warm cream keylines, fibrous torn edges, layered seams and soft paper shadows, while pieces pop or slide in, lightly bounce, press flat, pause and lock',
+      zh: '高级编辑感半调纸拼贴定格：大色块、黑白半调剪影、选择性彩色卡纸、暖白描边、纤维撕边、层叠接缝与柔和纸影；纸片弹入或滑入、轻微回弹、压平、暂停并锁定',
+    },
+  },
+  'handdrawn-live-video-generator': {
+    zh: '手绘实拍融合',
+    sourceSkill: 'handdrawn-live-video-generator',
+    directive: {
+      en: 'Live-action and rough glowing hand-drawn fusion in which crayon, chalk, colored-pencil or pastel strokes visibly redrawn frame by frame make clear physical contact with the real space, one entity morphs continuously while preserving its trace, and a handheld camera follows half a beat late, playful and tender rather than horrific',
+      zh: '实拍与粗糙发光手绘融合：蜡笔、粉笔、彩铅或粉彩笔触逐帧重画并与真实空间清楚接触，同一实体保留痕迹连续变形，手持镜头总慢半拍追随，调性可爱温柔而非恐怖',
+    },
+  },
+};
+
+export function h3StyleDirective(styleId, lang = 'en') {
+  const style = H3_STYLE_PRESETS[styleId];
+  return style?.directive?.[lang === 'zh' ? 'zh' : 'en'] ?? '';
+}
+
+export function renderH3StyleCatalog(styleId = null, lang = 'zh') {
+  const ids = styleId ? [styleId] : Object.keys(H3_STYLE_PRESETS);
+  for (const id of ids) if (!H3_STYLE_PRESETS[id]) throw new Error(`未知 h3Style「${id}」`);
+  const title = lang === 'en' ? '# H3 style presets' : '# H3 风格预设';
+  return [title, '', ...ids.flatMap((id) => {
+    const style = H3_STYLE_PRESETS[id];
+    return [
+      `## ${id} · ${style.zh}`,
+      '',
+      `source: MiniMax-H3/skills/${style.sourceSkill}`,
+      '',
+      h3StyleDirective(id, lang),
+      '',
+    ];
+  })].join('\n').trimEnd();
+}
+
 const CJK = /[㐀-鿿぀-ヿ가-힯]/;
 const NATURALISTIC_SYNTHETIC_SIGNAL = /uniform(?:ly)? (?:micro-detail|pore texture|textile texture)|procedural (?:surface texture|fabric grain)|equal sharpness|perfectly sharp across (?:the )?(?:image|frame)|excessive clarity|artificial depth-map blur|perfect studio separation|glamour lighting/i;
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -307,8 +402,92 @@ const r1 = (n) => Math.round(n * 10) / 10;
 export const H3_I2VA_LINE =
   'For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.';
 export const H3_FIELDS = ['integrated_multimodal_description:', 'overall_soundscape:', 'non_diegetic_music:'];
+export const H3_REF_FIELDS = [
+  'subject_definitions:',
+  'summary:',
+  'retention_analysis:',
+  'detailed_description:',
+  'overall_soundscape:',
+  'non_diegetic_music:',
+];
+export const H3_PROMPT_MODE = 'official-auto';
 
-/** 骨架 token 按语言取：默认英文（官方规范口径）；'zh' 整条中文（只保留 <d>[Chinese] 和 (S1) 两个模型级 token）。 */
+/** 新模式：单切只需首帧，走 I2VA；多切有多张 storyboard reference，走 Ref2VA。 */
+export function h3ModeForCuts(cuts, promptMode = H3_PROMPT_MODE) {
+  if (promptMode !== H3_PROMPT_MODE) return 'legacy-multiframe';
+  return (cuts?.length ?? 0) <= 1 ? 'I2VA' : 'Ref2VA';
+}
+
+/** Ref2VA 中可从 cuts 确定性生成的图片定义和保真前缀。 */
+export function h3ReferencePlan(cuts) {
+  const starts = cutStarts(cuts);
+  return (cuts ?? []).map((cut, i) => {
+    const k = i + 1;
+    const seconds = starts[i].toFixed(2);
+    const label = `<Picture ${k}>`;
+    const shot = `[Shot ${k}]`;
+    if (i === 0) {
+      return {
+        label, shot, seconds, role: 'first-frame',
+        definition: `${label} is the first frame of ${shot} at 0.00 seconds, defining its viewpoint, subject placement, identity anchors, and pre-action state.`,
+        retention: `${label} (${shot} first frame): fully_preserved - preserve the referenced composition, subject placement, identity anchors, and pre-action state at 0.00 seconds.`,
+      };
+    }
+    return {
+      label, shot, seconds, role: 'storyboard-reference',
+      definition: `${label} is a storyboard reference for ${shot} at ${seconds} seconds, defining its viewpoint, subject placement, identity anchors, and cut-entry state.`,
+      retention: `${label} (${shot} storyboard reference at ${seconds} seconds): fully_preserved - preserve the referenced viewpoint, subject placement, identity anchors, and cut-entry state.`,
+    };
+  });
+}
+
+/**
+ * cuts 完成后生成可填充的官方 H3 骨架；只负责可推导结构，不替模型编造画面、
+ * 台词或声音。方括号占位必须填完后再 validate。
+ */
+export function buildH3PromptScaffold(seg, { h3Style = null, promptLang = 'en' } = {}) {
+  const cuts = seg?.cuts ?? [];
+  if (!cuts.length) throw new Error(`${seg?.id ?? 'segment'} 没有 cuts，不能生成 H3 骨架`);
+  if (promptLang !== 'en') throw new Error(`${H3_PROMPT_MODE} 骨架按官方规范只输出英文`);
+  if (h3Style && !H3_STYLE_PRESETS[h3Style]) throw new Error(`未知 h3Style「${h3Style}」`);
+  const mode = h3ModeForCuts(cuts);
+  const style = h3Style ? `${h3StyleDirective(h3Style, 'en')}. ` : '';
+  if (mode === 'I2VA') {
+    return [
+      H3_I2VA_LINE,
+      '',
+      H3_FIELDS[0],
+      `[Shot 1] ${style}<Picture 1>. [Fill the observable timeline, camera, diegetic sound and dialogue.]`,
+      '',
+      `${H3_FIELDS[1]} [Fill 1–4 sentences of ambience, physical sounds and non-verbal human sounds.]`,
+      '',
+      `${H3_FIELDS[2]} [Fill instrumentation, tempo, rhythm and dynamics, or N/A.]`,
+    ].join('\n');
+  }
+  const refs = h3ReferencePlan(cuts);
+  const shotLines = refs.map((ref, i) => i === 0
+    ? `${ref.shot} ${style}${ref.label}. [Fill the observable timeline, camera, diegetic sound and dialogue.]`
+    : `${ref.shot} At ${h3CutTime(cutStarts(cuts)[i])}, ${ref.label}. [Continue the state and fill the observable timeline, camera, diegetic sound and dialogue.]`);
+  return [
+    H3_REF_FIELDS[0],
+    ...refs.map((ref) => ref.definition),
+    '',
+    H3_REF_FIELDS[1],
+    `[keyframe completion + reference generation] The target video begins from <Picture 1> and uses ${refs.slice(1).map((ref) => ref.label).join(', ')} as storyboard references for the ordered shot flow.`,
+    '',
+    H3_REF_FIELDS[2],
+    ...refs.map((ref) => ref.retention),
+    '',
+    H3_REF_FIELDS[3],
+    ...shotLines,
+    '',
+    `${H3_REF_FIELDS[4]} [Fill 1–4 sentences of ambience, physical sounds and non-verbal human sounds.]`,
+    '',
+    `${H3_REF_FIELDS[5]} [Fill instrumentation, tempo, rhythm and dynamics, or N/A.]`,
+  ].join('\n');
+}
+
+/** base/旧多图骨架 token；官方自动 Ref2VA 固定英文，zh 仅保留给旧 JSON。 */
 export const H3_TOKENS = {
   zh: {
     i2va: '目标视频在 0.00 秒处完全参照图 1（来自镜头 1）。',
@@ -350,8 +529,8 @@ export function h3CutTime(t) {
 }
 
 /**
- * 首行对齐指令：单分镜的段用 I2VA 固定句式；多分镜的段把每张分镜图
- * 钉在自己的切点秒数上。整行由分镜结构推导，validate 逐字对账。
+ * 兼容旧 JSON 的首行对齐指令：单分镜用 I2VA 固定句，多分镜保留旧多图行。
+ * 新 h3PromptMode=official-auto 的多分镜改走 Ref2VA，不调用这个函数。
  */
 export function h3AlignmentLine(cuts, lang = 'en') {
   const tk = H3_TOKENS[lang] ?? H3_TOKENS.zh;
@@ -368,12 +547,29 @@ export function h3Remainder(prompt) {
     .replace(/"[^"\n]*"/g, ' ');
 }
 
-/** 把 h3Prompt 的描述正文按 [镜头 k] / [Shot k] 切成每个分镜自己的段落。 */
+const h3UsesRefFields = (prompt) => String(prompt ?? '').includes(H3_REF_FIELDS[3]);
+const h3SemanticFields = (prompt, lang = 'en') => h3UsesRefFields(prompt)
+  ? H3_REF_FIELDS.slice(3)
+  : (H3_TOKENS[lang] ?? H3_TOKENS.zh).fields;
+
+function h3FieldValueFrom(prompt, fields, fieldIndex) {
+  const h3 = String(prompt ?? '');
+  const token = fields[fieldIndex];
+  const start = h3.indexOf(token);
+  if (start < 0) return '';
+  const bodyStart = start + token.length;
+  const nextToken = fields[fieldIndex + 1];
+  const end = nextToken ? h3.indexOf(nextToken, bodyStart) : -1;
+  return h3.slice(bodyStart, end < 0 ? undefined : end).trim();
+}
+
+/** 把 base/Ref2VA 的描述正文按 [镜头 k] / [Shot k] 切成每个分镜自己的段落。 */
 export function h3CutSlices(prompt, cutCount, lang = 'en') {
   const tk = H3_TOKENS[lang] ?? H3_TOKENS.zh;
   const h3 = String(prompt ?? '');
-  const bodyStart = h3.indexOf(tk.fields[0]);
-  const bodyEnd = h3.indexOf(tk.fields[1]);
+  const fields = h3SemanticFields(h3, lang);
+  const bodyStart = h3.indexOf(fields[0]);
+  const bodyEnd = h3.indexOf(fields[1]);
   if (bodyStart < 0) return [];
   const body = h3.slice(bodyStart, bodyEnd < 0 ? undefined : bodyEnd);
   const slices = [];
@@ -391,15 +587,7 @@ export function h3CutSlices(prompt, cutCount, lang = 'en') {
 
 /** 取 H3 三个核心字段中某一段的正文（0=描述、1=声景、2=配乐）。 */
 export function h3FieldValue(prompt, fieldIndex, lang = 'en') {
-  const tk = H3_TOKENS[lang] ?? H3_TOKENS.zh;
-  const h3 = String(prompt ?? '');
-  const token = tk.fields[fieldIndex];
-  const start = h3.indexOf(token);
-  if (start < 0) return '';
-  const bodyStart = start + token.length;
-  const nextToken = tk.fields[fieldIndex + 1];
-  const end = nextToken ? h3.indexOf(nextToken, bodyStart) : -1;
-  return h3.slice(bodyStart, end < 0 ? undefined : end).trim();
+  return h3FieldValueFrom(prompt, h3SemanticFields(prompt, lang), fieldIndex);
 }
 
 /* ------------------------------------------------------------------ */
@@ -727,6 +915,13 @@ export function gateReport(board, ctx = {}) {
   const styleId = board?.style ?? DEFAULT_STYLE;
   const style = STYLE_PRESETS[styleId];
   if (!style) bad.style.push(`style「${styleId}」不在预设里（${Object.keys(STYLE_PRESETS).join(' / ')}）`);
+  const h3StyleId = board?.h3Style ?? null;
+  const h3Style = h3StyleId ? H3_STYLE_PRESETS[h3StyleId] : null;
+  if (h3StyleId && !h3Style) bad.style.push(`h3Style「${h3StyleId}」不在 8 个预设里（${Object.keys(H3_STYLE_PRESETS).join(' / ')}）`);
+  const h3PromptMode = board?.h3PromptMode ?? null;
+  if (h3PromptMode && h3PromptMode !== H3_PROMPT_MODE) {
+    bad.h3s.push(`h3PromptMode「${h3PromptMode}」不支持，应为「${H3_PROMPT_MODE}」`);
+  }
   // 提示词语言：默认英文——官方规范的口径（台词仍在 <d> 里保留原文）；'zh' 可切整条中文
   const promptLang = board?.promptLang ?? 'en';
   const cameraPlanRequired = board?.cameraPlanMode === CAMERA_PLAN_MODE;
@@ -914,21 +1109,53 @@ export function gateReport(board, ctx = {}) {
       }
 
       const h3 = String(seg?.h3Prompt ?? '');
-      // H3 结构：首行对齐指令逐字对账（由分镜结构按 promptLang 推导），三字段按序，切点时刻逐个对
+      // 新 seed：按参考图数量自动选官方 I2VA / Ref2VA；旧 JSON 保留原多图对齐结构。
       const tk = H3_TOKENS[promptLang] ?? H3_TOKENS.zh;
-      const wantLine = h3AlignmentLine(cuts, promptLang);
-      if (!h3.trimStart().startsWith(wantLine)) {
-        bad.h3s.push(`${sid} 首行对齐指令和分镜结构对不上（promptLang=${promptLang}）`);
-      } else {
-        const idx = tk.fields.map((f) => h3.indexOf(f));
-        if (idx.some((i) => i < 0) || !(idx[0] < idx[1] && idx[1] < idx[2])) {
-          bad.h3s.push(`${sid} 三个核心字段缺失或顺序不对`);
+      const resolvedH3Mode = h3PromptMode === H3_PROMPT_MODE
+        ? h3ModeForCuts(cuts, h3PromptMode)
+        : 'legacy-multiframe';
+      if (h3PromptMode === H3_PROMPT_MODE && promptLang !== 'en') {
+        bad.h3e.push(`${sid} 的 h3PromptMode=${H3_PROMPT_MODE} 按官方规范必须使用英文（promptLang=en）`);
+      }
+      if (resolvedH3Mode === 'Ref2VA') {
+        const idx = H3_REF_FIELDS.map((f) => h3.indexOf(f));
+        if (!h3.trimStart().startsWith(H3_REF_FIELDS[0])) {
+          bad.h3s.push(`${sid} 多分镜参考图应走 Ref2VA，并以 subject_definitions: 开头`);
+        } else if (idx.some((i) => i < 0) || !idx.every((value, i) => i === 0 || idx[i - 1] < value)) {
+          bad.h3s.push(`${sid} 的 Ref2VA 六个字段缺失或顺序不对`);
         } else {
+          const definitions = h3FieldValueFrom(h3, H3_REF_FIELDS, 0);
+          const summary = h3FieldValueFrom(h3, H3_REF_FIELDS, 1);
+          const retention = h3FieldValueFrom(h3, H3_REF_FIELDS, 2);
+          if (!summary.startsWith('[keyframe completion + reference generation]')) {
+            bad.h3s.push(`${sid}.summary 必须以 [keyframe completion + reference generation] 开头`);
+          }
+          for (const ref of h3ReferencePlan(cuts)) {
+            if (!definitions.includes(ref.definition)) bad.h3s.push(`${sid}.subject_definitions 缺 ${ref.label} 的确定性定义`);
+            if (!retention.includes(ref.retention)) bad.h3s.push(`${sid}.retention_analysis 缺 ${ref.label} 的 fully_preserved 记录`);
+          }
           const starts = cutStarts(cuts);
-          if (h3.indexOf(tk.shot(1), idx[0]) < 0) bad.h3s.push(`${sid} 描述正文缺 ${tk.shot(1)}`);
+          if (h3.indexOf(tk.shot(1), idx[3]) < 0) bad.h3s.push(`${sid}.detailed_description 缺 ${tk.shot(1)}`);
           for (let k = 2; k <= cuts.length; k++) {
             const mark = tk.cutMark(k, h3CutTime(starts[k - 1]));
-            if (h3.indexOf(mark, idx[0]) < 0) bad.h3s.push(`${sid} 缺「${mark}」——切点时刻必须等于前面分镜秒数的累计`);
+            if (h3.indexOf(mark, idx[3]) < 0) bad.h3s.push(`${sid} 缺「${mark}」——切点时刻必须等于前面分镜秒数的累计`);
+          }
+        }
+      } else {
+        const wantLine = resolvedH3Mode === 'I2VA' ? H3_I2VA_LINE : h3AlignmentLine(cuts, promptLang);
+        if (!h3.trimStart().startsWith(wantLine)) {
+          bad.h3s.push(`${sid} 首行对齐指令和分镜结构对不上（mode=${resolvedH3Mode}，promptLang=${promptLang}）`);
+        } else {
+          const idx = tk.fields.map((f) => h3.indexOf(f));
+          if (idx.some((i) => i < 0) || !(idx[0] < idx[1] && idx[1] < idx[2])) {
+            bad.h3s.push(`${sid} 三个核心字段缺失或顺序不对`);
+          } else {
+            const starts = cutStarts(cuts);
+            if (h3.indexOf(tk.shot(1), idx[0]) < 0) bad.h3s.push(`${sid} 描述正文缺 ${tk.shot(1)}`);
+            for (let k = 2; k <= cuts.length; k++) {
+              const mark = tk.cutMark(k, h3CutTime(starts[k - 1]));
+              if (h3.indexOf(mark, idx[0]) < 0) bad.h3s.push(`${sid} 缺「${mark}」——切点时刻必须等于前面分镜秒数的累计`);
+            }
           }
         }
       }
@@ -954,6 +1181,22 @@ export function gateReport(board, ctx = {}) {
       const slices = h3CutSlices(h3, cuts.length, promptLang);
       const soundscapeText = h3FieldValue(h3, 1, promptLang);
       const musicText = h3FieldValue(h3, 2, promptLang);
+      if (resolvedH3Mode === 'Ref2VA') {
+        for (const [i, ref] of h3ReferencePlan(cuts).entries()) {
+          if (!String(slices[i] ?? '').includes(ref.label)) {
+            bad.h3s.push(`${sid} 的 [Shot ${i + 1}] 缺对应参考标签 ${ref.label}`);
+          }
+        }
+      }
+      if (h3Style) {
+        const directive = h3StyleDirective(h3StyleId, promptLang);
+        if (!String(slices[0] ?? '').includes(directive)) {
+          bad.style.push(`${sid} 的 [Shot 1] 缺 h3Style「${h3Style.zh}」指纹「${directive}」`);
+        }
+      }
+      if (soundscapeText.includes('<d>') || musicText.includes('<d>')) {
+        bad.h3s.push(`${sid} 的 <d> 对白只能放在视听描述字段，不能重复进声景或配乐`);
+      }
       if (frameEntryRequired) {
         const firstSlice = slices[0];
         const token = FRAME_ENTRY_TOKENS[promptLang === 'zh' ? 'zh' : 'en'];
@@ -1036,6 +1279,19 @@ export function gateReport(board, ctx = {}) {
       if (scene) {
         if (seg.sceneIndex < prevSceneIndex) bad.coverage.push(`${sid} 场次顺序倒退`);
         prevSceneIndex = Math.max(prevSceneIndex, seg.sceneIndex);
+      }
+
+      // H3 说话人编号按本段真实发声顺序确定，后续同一说话人必须复用同一 (Sx)。
+      const expectedSpeakerIds = new Map();
+      if (scene) {
+        for (const cut of cuts) {
+          const [from, to] = cut?.beats ?? [];
+          if (!Number.isInteger(from) || !Number.isInteger(to) || from < 1 || to > scene.beats.length || from > to) continue;
+          for (const beat of scene.beats.slice(from - 1, to)) {
+            if (beat.kind !== 'line' || !hasText(beat.speaker) || expectedSpeakerIds.has(beat.speaker)) continue;
+            expectedSpeakerIds.set(beat.speaker, `S${expectedSpeakerIds.size + 1}`);
+          }
+        }
       }
 
       cuts.forEach((cut, ci) => {
@@ -1356,7 +1612,30 @@ export function gateReport(board, ctx = {}) {
               if (b.kind !== 'line') continue;
               dlg += b.seconds;
               const re = new RegExp(`<d>\\[[^\\]]+\\]\\s*${b.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</d>`);
-              if (!re.test(h3)) bad.h3d.push(`${sid} 的 h3Prompt 缺台词「${b.text.slice(0, 12)}…」的 <d> 块`);
+              const slice = String(slices[ci] ?? '');
+              const match = slice.match(re);
+              if (!match) {
+                bad.h3d.push(`${cid} 缺台词「${b.text.slice(0, 12)}…」的逐字 <d> 块，或台词放错了 Shot`);
+                continue;
+              }
+              const speakerId = expectedSpeakerIds.get(b.speaker);
+              if (speakerId) {
+                const before = slice.slice(Math.max(0, (match.index ?? 0) - 320), match.index ?? 0);
+                if (!before.includes(`(${speakerId})`)) {
+                  bad.h3d.push(`${cid} 的台词「${b.text.slice(0, 12)}…」前缺稳定说话人编号 (${speakerId})`);
+                }
+              }
+              if (/画外音|旁白|voice\s*-?over|off\s*-?screen/i.test(String(b.delivery ?? ''))) {
+                const before = slice.slice(Math.max(0, (match.index ?? 0) - 240), match.index ?? 0);
+                const after = slice.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 160);
+                if (promptLang === 'en') {
+                  if (!before.includes('says in an off-screen voiceover') || !after.includes('lips remain completely closed')) {
+                    bad.h3d.push(`${cid} 的画外音必须使用官方 off-screen voiceover 句式并注明 lips remain completely closed`);
+                  }
+                } else if (!before.includes('以画外音说') || !after.includes('唇形完全闭合')) {
+                  bad.h3d.push(`${cid} 的画外音必须注明「以画外音说」和「唇形完全闭合」`);
+                }
+              }
             }
             if (dlg > cut.seconds) bad.fit.push(`${cid} 台词 ${r1(dlg)} 秒装不进 ${cut.seconds} 秒`);
           }
@@ -1458,8 +1737,8 @@ export function gateReport(board, ctx = {}) {
     bad.continuity.length === 0,
     bad.continuity.length ? bad.continuity.join('；') : continuityRequired ? '' : `未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`,
   );
-  add('h3-structure', 'H3 首行对齐指令由分镜结构推导逐字对账，切点时刻逐个对', eps.length > 0 && bad.h3s.length === 0, bad.h3s.join('；'));
-  add('h3-dialogue', '认领节拍的台词逐字进 H3 提示词的 <d> 块', bad.h3d.length === 0, script ? bad.h3d.join('；') : SKIP_SCRIPT);
+  add('h3-structure', 'H3 按参考图数量自动选 I2VA／Ref2VA；字段、参考图映射与切点时刻逐字对账', eps.length > 0 && bad.h3s.length === 0, bad.h3s.join('；'));
+  add('h3-dialogue', '认领台词在正确 Shot 逐字进 <d>，说话人 (Sx) 稳定，画外音注明闭唇', bad.h3d.length === 0, script ? bad.h3d.join('；') : SKIP_SCRIPT);
   add('h3-lang', `H3 提示词语言与设定一致（promptLang=${promptLang}，正文${promptLang === 'en' ? '全英文' : '中文'}、骨架 token 官方英文格式）`, bad.h3e.length === 0, bad.h3e.join('；'));
   add(
     'prompt-detail',
@@ -1485,7 +1764,7 @@ export function gateReport(board, ctx = {}) {
     bad.candidate.length === 0,
     bad.candidate.length ? bad.candidate.join('；') : candidateRequired ? '' : `未启用 candidateMode=${CANDIDATE_MODE}，九宫格候选检查跳过`,
   );
-  add('style-phrase', `分镜图风格短语统一（${style ? `${styleId}：${style.phrase}` : '预设无效'}）——同剧不许画风漂`, bad.style.length === 0, bad.style.join('；'));
+  add('style-phrase', `分镜图 style 统一（${style ? `${styleId}：${style.phrase}` : '预设无效'}）；${h3Style ? `H3 风格为 ${h3Style.zh}` : 'H3 使用基础写法'}且指纹进每段 Shot 1`, bad.style.length === 0, bad.style.join('；'));
   add('prompt-english', '完整分镜图提示词全英文且基础 frame 非空', bad.english.length === 0, bad.english.join('；'));
   add('prompt-no-names', '英文提示词不含角色名（分镜图提示词恒查；中文 H3 提示词放行）', bad.names.length === 0, banned.length ? bad.names.join('；') : SKIP_NAMES);
   add('refs', '场次／人物／道具对账剧本', bad.refs.length === 0, script ? bad.refs.join('；') : SKIP_SCRIPT);
@@ -1560,7 +1839,9 @@ export function validateStoryboard(board, ctx = {}) {
 /* seed — 从 script.json 确定性预填                                      */
 /* ------------------------------------------------------------------ */
 
-export function seedFromScript(script, epRange = null) {
+export function seedFromScript(script, epRange = null, options = {}) {
+  const h3Style = options?.h3Style ?? null;
+  if (h3Style && !H3_STYLE_PRESETS[h3Style]) throw new Error(`未知 h3Style「${h3Style}」`);
   const expanded = expandScript(script);
   const inRange = (n) => !epRange || (n >= epRange[0] && n <= epRange[1]);
   const episodes = [];
@@ -1595,6 +1876,8 @@ export function seedFromScript(script, epRange = null) {
   return {
     source: script?.source ?? '',
     params: { minSegmentSeconds: 5, maxSegmentSeconds: 10 },
+    h3PromptMode: H3_PROMPT_MODE,
+    ...(h3Style ? { h3Style } : {}),
     cameraPlanMode: CAMERA_PLAN_MODE,
     promptDetailMode: PROMPT_DETAIL_MODE,
     framePlanMode: FRAME_PLAN_MODE,
@@ -1629,7 +1912,9 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
       const mapping = (seg.cuts ?? [])
         .map((_, i) => `- Picture ${i + 1} = f${i + 1}.png${i === 0 ? '（**首帧**，钉 0.00 秒）' : `（钉 ${starts[i].toFixed(2)} 秒）`}`)
         .join('\n');
-      const promptMd = `# ${seg.id} · H3 提示词\n\n首帧 = **f1.png**。图片按 Picture 序号挂载：\n\n${mapping}\n\n---\n\n${seg.h3Prompt ?? ''}\n`;
+      const h3Mode = h3ModeForCuts(seg.cuts, board?.h3PromptMode ?? null);
+      const h3Style = board?.h3Style ? H3_STYLE_PRESETS[board.h3Style]?.zh ?? board.h3Style : '基础写法';
+      const promptMd = `# ${seg.id} · H3 提示词\n\n模式 = **${h3Mode}**；H3 风格 = **${h3Style}**。\n\n首帧 = **f1.png**。图片按 Picture 序号挂载：\n\n${mapping}\n\n---\n\n${seg.h3Prompt ?? ''}\n`;
       files.push({ path: `${prefix}${seg.id}/prompt.md`, content: promptMd });
       const pictures = (seg.cuts ?? []).map((_, i) => `${prefix}${seg.id}/f${i + 1}.png`);
       let candidateGrid = null;
@@ -1670,6 +1955,8 @@ export function exportPack(board, script, { imageExists = () => false, dir = '.'
         seconds: segSeconds(seg),
         cuts: (seg.cuts ?? []).length,
         cutStarts: cutStarts(seg.cuts),
+        h3Mode,
+        h3Style: board?.h3Style ?? null,
         prompt: `${prefix}${seg.id}/prompt.md`,
         pictures,
         imagePrompts,
@@ -1719,14 +2006,14 @@ const GATE_LABELS_EN = {
   'size-phrase': 'Shot-size phrase present in the frame prompt',
   'camera-phrase': 'Official H3 camera move; in cinematic mode, the complete camera plan and transition appear inside their own [Shot k]',
   'continuity': 'Adjacent cuts share an exact state boundary and motion/light/audio/axis bridge; continuous segments carry an audited handoff',
-  'h3-structure': 'H3 alignment line derived from the cut structure, audited verbatim; cut times match',
-  'h3-dialogue': 'Claimed dialogue appears verbatim inside the H3 <d> blocks',
+  'h3-structure': 'H3 selects I2VA or Ref2VA from its reference count; fields, picture mapping and cut times are audited verbatim',
+  'h3-dialogue': 'Claimed dialogue appears verbatim in the correct Shot with stable (Sx) IDs and closed-lip voiceover handling',
   'h3-lang': 'Prompt language matches the promptLang setting',
   'prompt-detail': 'Production-rich prompt: visual layers per cut, layered soundscape and scored music arc per segment',
   'frame-density': 'Frame prompts use role-driven sparse / balanced / rich density and compile into the final image prompt',
   'frame-entry-state': 'Every segment f1 is a pre-action entry state; motion starts only after the 0.00-second frame',
   'candidate-grid-selection': 'Each segment has one rough nine-cell grid; human selection runs entry to result and audits cuts plus edge plans',
-  'style-phrase': 'Frame-prompt style phrase consistent — one drama, one look',
+  'style-phrase': 'Frame style stays consistent; the selected H3 style fingerprint appears in every segment',
   'prompt-english': 'Compiled frame prompts are English and the base frame is non-empty',
   'prompt-no-names': 'Compiled English frame prompts carry no character names',
   'refs': 'Scenes / characters / props audited against the script',
@@ -2002,7 +2289,9 @@ export function renderMarkdown(board, ctx = {}) {
           `${summary}${cameraPlan ? `<br>**${cameraPlan}**` : ''}${framePlan ? `<br>**${framePlan}**` : ''}`, (cut.characters ?? []).map(n.char).join(t.listSep),
         ]));
       });
-      out.push('', `**${t.h3Section}**`, '', '```text', seg.h3Prompt ?? '', '```', '');
+      const h3Mode = h3ModeForCuts(seg.cuts, board?.h3PromptMode ?? null);
+      const h3Style = board?.h3Style ? (H3_STYLE_PRESETS[board.h3Style]?.zh ?? board.h3Style) : (t.langCode === 'en' ? 'base' : '基础');
+      out.push('', `**${t.h3Section} · ${h3Mode} · ${h3Style}**`, '', '```text', seg.h3Prompt ?? '', '```', '');
     }
   }
 
@@ -2080,6 +2369,10 @@ export function renderHtml(board, ctx = {}) {
           const frame = (ci) => `${seg.id}/f${ci + 1}.png`;
           const has = (ci) => (ctx.imageExists ? ctx.imageExists(frame(ci)) : false);
           const candidatePath = `${seg.id}/candidate-grid.png`;
+          const h3Mode = h3ModeForCuts(seg.cuts, board?.h3PromptMode ?? null);
+          const h3Style = board?.h3Style
+            ? (t.langCode === 'en' ? board.h3Style : H3_STYLE_PRESETS[board.h3Style]?.zh ?? board.h3Style)
+            : (t.langCode === 'en' ? 'base' : '基础');
           const hasCandidate = Boolean(seg?.candidateBoard && ctx.imageExists && ctx.imageExists(candidatePath));
           const candidatePrompt = seg?.candidateBoard ? buildCandidateGridPrompt(seg, board?.style ?? DEFAULT_STYLE) : '';
           const candidatePanel = seg?.candidateBoard
@@ -2175,7 +2468,7 @@ ${cutRows}
     </ol>
     <div class="ppanel">
       <div class="pp-h">
-        <b>${esc(t.h3Prompt)}</b>
+        <b>${esc(`${t.h3Prompt} · ${h3Mode} · ${h3Style}`)}</b>
         <button class="copy" data-copy="${esc(seg.h3Prompt ?? '')}">${esc(t.copy)}</button>
       </div>
       <pre class="pp on">${esc(seg.h3Prompt ?? '')}</pre>
@@ -2611,6 +2904,9 @@ document.querySelector('.expo').addEventListener('click', (e) => {
 const USAGE = `novel-storyboard.mjs — novel-storyboard skill 的确定性工具（分镜）
 
   seed <script.json> [--eps 1-3]              从剧本预填节拍工作底稿（打印到 stdout）
+       [--h3-style <id>]                      可选套用 8 种 H3 风格之一
+  h3-styles [id] [--lang zh|en]               列出 H3 风格，或打印一个风格的确定性指纹
+  h3-scaffold <sb.json> [--segment E01-01]    cuts 完成后生成 I2VA／Ref2VA 可填充骨架
   select <sb.json> <selection.json> [--out]   写回九宫格人工选择并标记对应段需要重排
   validate <sb.json> --script <script.json>   校验；有违规逐条打印并 exit 1
            [--outline] [--cast] [--art]       outline/cast 查提示词人名；art 只管显示名字
@@ -2678,15 +2974,40 @@ function main(argv) {
 
   if (cmd === 'seed') {
     const [path] = rest;
-    if (!path) throw new Error('用法：seed <script.json> [--eps 1-3]');
+    if (!path) throw new Error('用法：seed <script.json> [--eps 1-3] [--h3-style <id>]');
     const range = flag(rest, '--eps');
+    const h3Style = flag(rest, '--h3-style');
     let epRange = null;
     if (range) {
       const m = String(range).match(/^(\d+)-(\d+)$/) ?? String(range).match(/^(\d+)$/);
       if (!m) throw new Error('--eps 形如 3 或 1-6');
       epRange = m[2] ? [Number(m[1]), Number(m[2])] : [Number(m[1]), Number(m[1])];
     }
-    console.log(JSON.stringify(seedFromScript(readJson(path), epRange), null, 2));
+    console.log(JSON.stringify(seedFromScript(readJson(path), epRange, { h3Style }), null, 2));
+    return;
+  }
+
+  if (cmd === 'h3-styles') {
+    const styleId = rest.find((value, i) => i === 0 && !value.startsWith('--')) ?? null;
+    const lang = flag(rest, '--lang', 'zh');
+    if (!['zh', 'en'].includes(lang)) throw new Error('--lang 只支持 zh / en');
+    console.log(renderH3StyleCatalog(styleId, lang));
+    return;
+  }
+
+  if (cmd === 'h3-scaffold') {
+    const [path] = rest;
+    if (!path) throw new Error('用法：h3-scaffold <storyboard.json> [--segment E01-01]');
+    const board = readJson(path);
+    const wanted = flag(rest, '--segment');
+    const segments = (board?.episodes ?? []).flatMap((ep) => ep?.segments ?? []).filter((seg) => !wanted || seg.id === wanted);
+    if (!segments.length) throw new Error(wanted ? `找不到段「${wanted}」` : 'storyboard 没有可生成骨架的段');
+    const output = segments.map((seg) => [
+      `# ${seg.id} · ${h3ModeForCuts(seg.cuts)}`,
+      '',
+      buildH3PromptScaffold(seg, { h3Style: board?.h3Style ?? null, promptLang: board?.promptLang ?? 'en' }),
+    ].join('\n')).join('\n\n---\n\n');
+    console.log(output);
     return;
   }
 
