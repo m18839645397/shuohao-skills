@@ -18,21 +18,23 @@
 
 报告里的「完整分镜图提示词」复制按钮和 `export` 的 `fN.prompt.md` 都使用组装结果。**不要再直接复制 JSON 里的薄 `frame` 去出图。**
 
-每段 f1 必须 `moment=entry`：人物、姿态、视线、道具和效果均处于动作前状态，动作只在0.00秒之后开始。具体契约见 `frame-entry.md`。
+每段 f1 必须 `moment=entry`：人物、姿态、视线、道具和效果均处于本切新动作前状态；只有本切新动作在0.00秒之后开始，startState 已存在的搬运、承重、接触和环境动势不能被清空。具体契约见 `frame-entry.md`。
 
 ## 参考图挂载（命根子）
 
 每一格的 `-i` 清单：
 
-1. **场景参考**：cinematic / naturalistic 优先 `images/<场景名>-master.png`，其他风格或缺 master 时才回退 sheet
-2. **角色参考**：cinematic / naturalistic 优先 `images/<角色名>-screen-test.png`，sheet 只补服装背面、比例和细节
-3. **叙事道具参考**：cinematic / naturalistic 优先道具主状态 `master.png`，有就挂；避免把多面板技术版式传进最终镜头
+1. **场景参考**：cinematic / naturalistic 优先 `images/<场景名>-master.png`，其他风格或缺 master 时才回退 sheet。只继承空间结构、材质与光照连续性，不照抄 master 的机位、中心轴和构图
+2. **角色参考**：cinematic / naturalistic 优先 `images/<角色名>-screen-test.png`，sheet 只补服装背面、比例和细节。只继承身份、面孔、发型、体型、服装与稳定锚点；忽略 screen-test 的姿势、视线、手势、手持物、背景、机位和光线，按当前 frame 重新调度
+3. **叙事道具参考**：cinematic / naturalistic 优先道具主状态 `master.png`，有就挂；避免把多面板技术版式传进最终镜头。只继承造型、材质、尺度与结构，不照抄白底主图的正面展示角度
 4. **链式参考是硬要求**：f2 起始终挂本段 f1 + 立即上一切；标准场景/角色/道具资产继续全部挂上。f1 锁世界观和光线，上一切锁姿势、动作阶段、道具、闪光/雾/震动状态，标准资产防止错误沿链漂移
 5. **挂图按「画面里有什么」，不按「段属于哪个场」**：段在栈桥场，但画面里出现了渡船，就必须把渡船的设定图也挂上——不挂 = 每帧发明一条新船（踩过）。船、马车、宅门这类「会入画的大资产」都同理
 6. **提示词必须写明人物此刻的位置状态**：已上船 / 在舱内 / 站在桥头——切镜时人物位置是连续的剧情状态，只写构图不写状态，模型会把上了船的人又画回岸上（踩过）
 7. **连续段的 f1 挂上一段最后一帧**：`handoff.kind=continuous` 时，下一段 f1 除标准资产外必须挂上一段最后一张分镜图；`scene-change` / `time-jump` 不挂
 
 完整 imagePrompt 开头已经声明环境、角色和道具参考图的职责；实际调用时仍要按附件顺序明确哪张是环境、谁的角色图、哪件道具图，别让模型猜。
+
+人物行为同样是硬要求：每只可见的手必须有现实任务或自然受重力支撑；视线有明确对象；道具朝使用者、支撑面或实际光源，不为镜头展示；人物允许错层、遮挡和不完整露出。除非剧本明确要求，不得正面排队、对称夹住道具或复制 casting/screen-test 的姿势。
 
 f2 起固定追加：`Preserve the exact subject pose, position, screen direction, prop state, light level and physical event from the previous-cut reference. Continue from the same instant; change only the shot size and camera composition required by this frame.` 连续段 f1 把 `previous-cut` 改成 `previous-segment final-frame`。
 
@@ -58,7 +60,9 @@ f2 起固定追加：`Preserve the exact subject pose, position, screen directio
 - 角色的脸和衣服对不对得上角色设定图
 - 景别对不对（提示词写 close-up 出来却是全景 → 重生成）
 - f1 是否真的处于动作前入口态，而不是已经奔跑、拍中、转身或打开
+- f1 是否只延后本切新动作，同时保留 startState 里已经存在的搬运、承重、接触和环境动势
 - rich 镜头是否有清楚的前中后景和至少两条叙事线索，而不是只多了无关摆件
 - sparse 镜头是否保持单一视觉中心、材质和光影细节，而不是低质量空白
+- 人物是否像正在处理事情：手有功能、视线有对象、道具不朝镜头展示；有没有照抄 screen-test 手势、正面排队、对称夹物或冻结群像
 - naturalistic 是否只有焦平面最清楚，皮肤/发丝/磨损按部位局部分布，承重、接触、衣物和地面反馈符合物理因果
 - 有没有多出来的人（背景围观群众是最常见污染）——多人就重生成

@@ -151,6 +151,16 @@ const FRAME_DENSITY_INSTRUCTIONS = {
   balanced: 'Keep a balanced narrative composition with a clear subject plane, one supporting spatial layer and one legible story cue.',
   rich: 'Build a narratively dense but controlled composition with legible foreground, subject plane and background; every detail must support the beat.',
 };
+const FRAME_REFERENCE_INSTRUCTIONS = {
+  environment: 'Use the attached environment reference for location geometry, materials and lighting continuity; do not inherit its camera position or centred composition unless this frame explicitly requires them.',
+  character: [
+    'Use the attached character references only for identity, facial structure, hair, body proportions, wardrobe and stable physical anchors.',
+    'Ignore and do not copy their source pose, gaze, hand gesture, held object, background, framing, camera angle or lighting; restage every subject from this frame state.',
+  ],
+  prop: 'Use the attached prop references only for identity, material, scale and construction; ignore their studio background, hero angle, display orientation, lighting and framing, then restage each prop from its holder, support, gravity and contact in this frame.',
+};
+const FRAME_BEHAVIOR_INSTRUCTION = 'Stage people as observed mid-situation, not arranged for a photograph. Every visible hand must have a functional task or settle under gravity; each gaze follows another person, the current task or a relevant prop. A narrative prop faces its user, support or practical light, not the camera for display, unless the beat explicitly requires direct presentation. Preserve plausible balance, weight transfer, contact, unequal depth and partial occlusion; avoid front-facing lineups and symmetrical tableaux.';
+const FRAME_ENTRY_INSTRUCTION = 'This is the exact action-entry state at 0.00 seconds. Only the new action claimed by this shot begins after this still frame. Preserve the physical phase and cause of every unfinished incoming action or environmental motion already present in the start state; do not reset people and props into a frozen tableau.';
 
 /**
  * 单切结构化 framePlan → 真正交给 imagegen 的完整英文提示词。
@@ -167,20 +177,18 @@ export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = f
   const list = (field) => Array.isArray(plan[field])
     ? plan[field].filter(hasText).map((x) => String(x).trim())
     : [];
-  const lines = [
-    'Treat the attached environment reference as the exact location, material and lighting standard.',
-  ];
+  const lines = [FRAME_REFERENCE_INSTRUCTIONS.environment];
   if ((cut?.characters ?? []).length) {
-    lines.push('Match every on-screen subject exactly to the attached character reference images.');
+    lines.push(...FRAME_REFERENCE_INSTRUCTIONS.character, FRAME_BEHAVIOR_INSTRUCTION);
   }
   if ((cut?.props ?? []).length) {
-    lines.push('Match every narrative prop exactly to the attached prop reference images.');
+    lines.push(FRAME_REFERENCE_INSTRUCTIONS.prop);
   }
   const style = STYLE_PRESETS[styleId];
   if (style?.guard) lines.push(style.guard);
   lines.push(FRAME_DENSITY_INSTRUCTIONS[plan.density] ?? 'Keep the composition narratively clear and controlled.');
   if (plan.moment === 'entry') {
-    lines.push('This is the exact action-entry state at 0.00 seconds; motion begins only after this still frame.');
+    lines.push(FRAME_ENTRY_INSTRUCTION);
     const entry = plan.entryStatePrompt;
     if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
       if (hasText(entry.position)) lines.push(`Entry position: ${entry.position.trim()}.`);
@@ -222,9 +230,12 @@ export function buildCandidateGridPrompt(seg, styleId = 'realistic') {
       : 'Create ONE rough 3-by-3 storyboard contact sheet on a single 16:9 canvas.',
     'Exactly nine equal 16:9 panels arranged in three columns and three rows with narrow clean gutters.',
     'This is a low-detail composition board for human selection: prioritize readable staging, shot size, screen direction, prop ownership and action phase over facial or material detail.',
-    'Use the attached environment, character and prop references as rough identity and continuity standards; do not spend detail budget on polish.',
+    FRAME_REFERENCE_INSTRUCTIONS.environment,
+    ...FRAME_REFERENCE_INSTRUCTIONS.character,
+    FRAME_REFERENCE_INSTRUCTIONS.prop,
+    FRAME_BEHAVIOR_INSTRUCTION,
     'Keep the same characters, costume blocks, location geometry, lighting direction and narrative props consistent across all nine panels.',
-    'Row 1 is the pre-action entry state; row 2 is action development; row 3 is the visible result or exit state.',
+    'Row 1 precedes only the newly claimed action while preserving every incoming unfinished action in its current physical phase; row 2 is action development; row 3 is the visible result or exit state.',
   ];
   if (style?.guard) lines.push(style.guard);
   if (styleId === 'naturalistic') {
@@ -286,7 +297,7 @@ export const STYLE_PRESETS = {
     gridLead: 'naturalistic live-action documentary photographic',
     phrase: 'naturalistic live-action frame',
     guard: 'Naturalistic live-action observation with real ordinary people, practical clothing and real existing locations, captured with available daylight or believable practical light, neutral white balance, modest dynamic range, observational framing and minimal styling. Use a real optical focus hierarchy: the intended subject plane or nearer iris is sharpest while the far eye and cheek, ear, rear hairline, foreground and deeper background lose resolution progressively through natural lens falloff. Keep skin detail regional, hair partly grouped into unresolved dark masses and clothing wear localized to actual use. Show physical causality: weight-bearing posture changes pelvis and shoulders, soles compress into the floor, fingers and objects create contact deformation, cloth displacement and grounded shadows. Allow weak uncontrolled fill, uneven practical backgrounds and imperfect subject separation',
-    negative: 'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character or environment, Unreal Engine look, game cinematic, glamour portrait, uniform micro-detail, uniform pore texture, procedural surface texture, equal sharpness across the image, excessive clarity, excessive digital sharpening, HDR local contrast, artificial depth-map blur, every hair strand equally resolved, uniform textile texture, procedural fabric grain, perfect studio illumination, perfect subject-background separation, contact without deformation, floating weightless objects, geometrically level shoulders and pelvis, symmetrical mannequin stance, dramatic rim lighting, heroic composition, theatrical fog, luxury styling, beauty retouching, airbrushed skin, artificial teal-orange grading',
+    negative: 'illustration, digital painting, painterly brushwork, concept art, anime, manga, cel shading, toon shading, stylized anatomy, oversized eyes, porcelain doll face, fashion-doll proportions, 3d render, CGI character or environment, Unreal Engine look, game cinematic, glamour portrait, posed publicity still, copied casting-photo pose, direct-to-camera prop presentation, front-facing lineup, symmetrical evidence display, frozen tableau, uniform micro-detail, uniform pore texture, procedural surface texture, equal sharpness across the image, excessive clarity, excessive digital sharpening, HDR local contrast, artificial depth-map blur, every hair strand equally resolved, uniform textile texture, procedural fabric grain, perfect studio illumination, perfect subject-background separation, contact without deformation, floating weightless objects, geometrically level shoulders and pelvis, symmetrical mannequin stance, dramatic rim lighting, heroic composition, theatrical fog, luxury styling, beauty retouching, airbrushed skin, artificial teal-orange grading',
   },
   ghibli: { zh: '吉卜力手绘', phrase: 'hand-painted anime film still' },
   inkwash: { zh: '国风水墨', phrase: 'chinese ink-wash cinematic frame' },

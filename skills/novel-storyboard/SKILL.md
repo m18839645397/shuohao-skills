@@ -1,6 +1,6 @@
 ---
 name: novel-storyboard
-version: 1.16.0
+version: 1.17.0
 description: |
   给 AI 短剧出分镜：三层结构——段（新 seed 默认 5–10 秒，一次视频生成）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
@@ -10,7 +10,8 @@ description: |
   可从 MiniMax 官方其余 8 个技能选择 h3Style，逐段锁定视频运动/包装指纹；每切带克制电影化 cameraPlan，明确起点、目标、焦点、
   速度/幅度、结束构图、导演意图与转场；投产级丰富模式逐切写空间、光线、主体、动作、效果与连续性，
   静态分镜图按镜头功能自动分配 sparse/balanced/rich 画面密度并确定性组装完整 imagePrompt，
-  每段 f1 强制对齐动作前 entry state，人物动作只在0.00秒之后开始，
+  角色/场景/道具参考图只继承各自职责，隔离试镜姿势、白底展示角度和原图机位；每段 f1 强制对齐动作前 entry state，
+  只有本切新动作在0.00秒之后开始，startState 已存在的搬运、承重、接触和环境动势必须保留，
   每段可先用一次调用生成粗略九宫格，人工按顺序选择 N 格后再分别生成高清终稿，并以 edgePlan 处理相邻衔接，
   逐段写分层声景和配乐动态；状态链模式对账相邻镜头与连续段的人物位置、姿势、视线、道具、光效、
   银幕方向和动作/声音桥，避免硬切与状态重置。
@@ -78,7 +79,7 @@ metadata:
 
 **一次切几集**：跟剧本的批次走（剧本写到哪就分到哪），默认一批 ≤ 3 集。
 
-风格跟上游同名：`naturalistic` 是现实/纪实风格，使用普通真人、现实地点、可用光、中性曝光和观察式构图；焦点平面最清楚，皮肤/发丝/磨损只在真实可见位置给细节，承重与接触必须有物理反馈；不使用全图等清晰、程序化纹理、假景深、完美主体分离或 cinematic 的戏剧化包装。
+风格跟上游同名：`naturalistic` 是现实/纪实风格，使用普通真人、现实地点、可用光、中性曝光和观察式构图；焦点平面最清楚，皮肤/发丝/磨损只在真实可见位置给细节，承重与接触必须有物理反馈；人物应被观察到正在处理事情，而不是为镜头站好，手有功能、视线有对象、道具朝使用者或实际光源；不使用全图等清晰、程序化纹理、假景深、完美主体分离或 cinematic 的戏剧化包装。
 
 ### Step 1 — seed 工作底稿
 
@@ -102,7 +103,7 @@ node {baseDir}/scripts/novel-storyboard.mjs select <storyboard.json> <selection.
   --out <storyboard-selected.json>
 ```
 
-**画面密度不是剧情强度的同义词**：新空间定场和复杂关系用 rich；普通对话用 balanced；反应、停顿和手部/道具特写用 sparse。强烈情绪的脸部特写仍应克制，靠微表情、材质、光影和留白，而不是塞背景物件。最终出图不直接使用基础 `frame`，必须使用报告复制按钮或 export 生成的完整 imagePrompt。
+**画面密度不是剧情强度，也不是摆拍程度的同义词**：新空间定场和复杂关系用 rich；普通对话用 balanced；反应、停顿和手部/道具特写用 sparse。三档都必须服从人物行为因果，不能为了让观众看清线索而让角色把证物正对镜头。强烈情绪的脸部特写仍应克制，靠微表情、材质、光影和留白，而不是塞背景物件。最终出图不直接使用基础 `frame`，必须使用报告复制按钮或 export 生成的完整 imagePrompt。
 
 **每段写一条 `h3Prompt`**，照 `{baseDir}/references/h3-prompt.md` 写（官方方法论内化版，**不依赖任何外部 skill**）。cuts 完成后先运行 `h3-scaffold <storyboard.json> [--segment E01-01]` 取得可填充骨架；新 seed 的 `h3PromptMode: "official-auto"` 会让单 cut 用 I2VA、多 cut 用 Ref2VA，Picture 定义和 retention 前缀由 `h3ReferencePlan(cuts)` 推导。官方自动模式固定英文；**每个镜头独立一行**。Shot 2 起先写同一瞬间承接句和 transitionPlan，再改变景别/机位；连续段 Shot 1 先写段间承接句和 handoff。台词必须在正确 Shot 逐字进 `<d>`，按本段首次发声顺序分配并复用 `(Sx)`；cameraPlan/visualPlan 逐字进自己的 Shot，audioPlan 进入声景与配乐字段。
 
@@ -129,13 +130,13 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
 一切一张 16:9 关键帧，走 codex 内置 `$imagegen`，读 `{baseDir}/references/frame.md` 照契约做。要点：
 
 - **没有 codex 就整步跳过**，只交提示词，报告显示占位不装有
-- **参考图是命根子**：`-i` 挂上该段场景设定图（该光照状态）+ 画内角色的设定图 + 涉及道具的设定图，提示词只负责取景和此刻的姿态
-- `cinematic` / `naturalistic` 优先挂角色 `screen-test.png`、场景/道具 `master.png` 单帧；不要把白底三视图或 L 形技术 sheet 当成唯一真人镜头参考
-- **f1 不是动作代表帧**：它必须画 startState 的动作前入口态；奔跑、拍击、转身、开门等动作从0.00秒之后开始
+- **参考图是命根子，但职责必须隔离**：场景图只锁空间/材质/光线，不继承原机位；角色图只锁身份/体型/发型/服装，不继承试镜姿势、视线、手势和手持物；道具图只锁造型/材质/尺度，不继承白底展示角度
+- `cinematic` / `naturalistic` 优先挂角色 `screen-test.png`、场景/道具 `master.png` 单帧；screen-test 带签名动作或道具时仍只作身份参考，完整 imagePrompt 必须明确重新调度人物。不要把白底三视图或 L 形技术 sheet 当成唯一真人镜头参考
+- **f1 不是动作代表帧，也不是全场冻结照**：它必须画 startState；本切新发生的奔跑、拍击、转身、开门等动作从0.00秒之后开始，但 startState 已经存在的搬运、承重、接触和环境动势必须保持原物理阶段
 - **九宫格只做粗选**：每段先生成一张 `candidate-grid.png`；图片里不画编号，报告叠加 G1–G9。选中格子必须分别重生成高清 f1..fN
 - **链式参考也是硬要求**：f2 起额外挂本段 f1 + 立即上一切；连续段的下一段 f1 再挂上一段最后一帧。标准资产始终保留，防止链式漂移
 - 一格一次调用绝不批量；输出 `./<段号>/f<切序>.png`（f1 = 主分镜图，每段一个文件夹）
-- **默认先出三张代表图**：rich 定场/高潮、balanced 对话/移动、sparse 反应/特写各一张；三档信息量都正确再往后补
+- **默认先出三张代表图**：rich 定场/高潮、balanced 对话/移动、sparse 反应/特写各一张；三档都要同时确认信息量与行为因果，出现正面排队、向镜头展示道具、照抄试镜姿势或冻结群像就驳回
 - 单个失败跳过不阻断，最后汇总说明
 
 ### Step 5 — 输出与汇报
@@ -210,7 +211,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-424 项断言，不调模型、不花额度。23 道门包含 I2VA/Ref2VA 路由与骨架、8 种 H3 风格、说话人编号、cinematic、naturalistic、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
+434 项断言，不调模型、不花额度。23 道门包含 I2VA/Ref2VA 路由与骨架、8 种 H3 风格、说话人编号、cinematic、naturalistic、参考图职责隔离、人物行为因果、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
 
 ## 自带样例
 

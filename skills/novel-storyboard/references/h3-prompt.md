@@ -26,7 +26,7 @@ overall_soundscape: ...
 non_diegetic_music: ...
 ```
 
-`[Shot 1]` 先建立画风、构图、主体、空间与 `<Picture 1>` 的身份/位置锚点，尽早写入 `motion begins only after the 0.00-second entry frame`，再展开可见动作、运镜、状态变化、同步声音和台词。
+`[Shot 1]` 先建立画风、构图、主体、空间与 `<Picture 1>` 的身份/位置锚点，尽早写入 `motion begins only after the 0.00-second entry frame`。这句只延后本切新认领的动作；若 startState 已有未完成搬运、承重、接触或环境动势，先明确其当前阶段继续存在，再展开本切动作、运镜、状态变化、同步声音和台词。
 
 ## Ref2VA：多分镜段
 
@@ -105,7 +105,7 @@ node scripts/novel-storyboard.mjs h3-scaffold storyboard.json --segment E01-01
 
 ## 关键帧与连续性
 
-- f1 是 0.00 秒动作前 entry state；动作只能在入口帧之后开始。
+- f1 是 0.00 秒本切新动作前 entry state；本切新动作只能在入口帧之后开始，但 startState 已存在的未完成动作和物理动势不能被重置。
 - Ref2VA 的 f2...fN 是 Shot 规划参考，不是让模型静止复刻整段；每个 Shot 先承接状态，再沿可见动作走向下一状态。
 - `sourceState` 是剧本事实，`startState/endState` 是摄影翻译，`transitionPlan/handoff` 是跨切桥。三层不能互相替代。
 - 人物位置、姿势、视线、道具、光效、银幕方向和声音桥都要从上一末态接到下一首态；换场或时间跳跃必须显式标记。

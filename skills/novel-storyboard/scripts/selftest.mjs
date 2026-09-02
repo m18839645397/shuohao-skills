@@ -904,10 +904,17 @@ eq(h3Remainder('a <d>[Chinese] 你好</d> b "营业中" c'), 'a   b   c', 'h3Rem
 {
   const doc = adaptiveFrameDoc('rich');
   const cut = doc.episodes[0].segments[0].cuts[0];
+  cut.characters = ['C01'];
+  cut.props = ['P01'];
   const prompt = buildFrameImagePrompt(cut);
   ok(prompt.includes(cut.framePlan.keyMoment), '完整 imagePrompt 吃到关键帧瞬间');
   ok(prompt.includes(cut.framePlan.foreground[0]) && prompt.includes(cut.framePlan.background[0]), 'rich imagePrompt 吃到前后景');
   ok(prompt.includes(cut.framePlan.storyCues[1]), 'rich imagePrompt 吃到叙事线索');
+  ok(prompt.includes('do not inherit its camera position or centred composition'), '场景参考只锁空间材质与光线，不复制原图机位构图');
+  ok(prompt.includes('only for identity, facial structure, hair, body proportions, wardrobe') && prompt.includes('do not copy their source pose'), '角色参考只锁身份服装并隔离试镜姿势');
+  ok(prompt.includes('Every visible hand must have a functional task') && prompt.includes('not the camera for display'), '完整 imagePrompt 约束手部功能与道具真实朝向');
+  ok(prompt.includes('unequal depth and partial occlusion') && prompt.includes('avoid front-facing lineups and symmetrical tableaux'), '完整 imagePrompt 禁止人物排队摆拍');
+  ok(prompt.includes('ignore their studio background, hero angle, display orientation'), '道具参考只锁造型材质并隔离白底展示角度');
   ok(prompt.includes('No text, no watermark, no borders'), '完整 imagePrompt 固定禁文字水印边框');
 }
 {
@@ -957,6 +964,8 @@ ok(gate(FIXTURE, 'frame-density', CTX).ok && gate(FIXTURE, 'frame-density', CTX)
   const cut = doc.episodes[0].segments[0].cuts[0];
   const prompt = buildFrameImagePrompt(cut);
   ok(prompt.includes('exact action-entry state at 0.00 seconds'), '完整 imagePrompt 明确 f1 是 0.00 秒动作入口态');
+  ok(prompt.includes('Only the new action claimed by this shot begins after this still frame'), '入口帧只延后本切新动作，不冻结整个现场');
+  ok(prompt.includes('unfinished incoming action or environmental motion') && prompt.includes('do not reset people and props into a frozen tableau'), '入口帧保留上游未完成动作的物理阶段');
   ok(FRAME_ENTRY_FIELDS.every((field) => prompt.includes(cut.framePlan.entryStatePrompt[field])), '五项入口态逐字进入完整 imagePrompt');
 }
 {
@@ -1094,10 +1103,13 @@ ok(gate(FIXTURE, 'candidate-grid-selection', CTX).ok && gate(FIXTURE, 'candidate
   ok(prompt.includes('nearer iris is sharpest') && prompt.includes('lose resolution progressively'), '现实风格终稿按真实焦平面分配清晰度');
   ok(prompt.includes('skin detail regional') && prompt.includes('contact deformation'), '现实风格终稿约束局部材质和接触形变');
   ok(prompt.includes('uniform micro-detail') && prompt.includes('artificial depth-map blur'), '现实风格终稿禁止均匀微细节与假景深');
+  ok(prompt.includes('posed publicity still') && prompt.includes('direct-to-camera prop presentation') && prompt.includes('frozen tableau'), '现实风格终稿禁止宣传照式摆拍、向镜头展示道具和冻结群像');
   const gridDoc = candidateGridDoc();
   const grid = buildCandidateGridPrompt(gridDoc.episodes[0].segments[0], 'naturalistic');
   ok(grid.includes('naturalistic live-action documentary photographic'), '现实风格九宫格使用真人纪实摄影联系表');
   ok(grid.includes('one readable focal plane per panel') && grid.includes('Roughness means less resolved detail'), '现实风格粗九宫格也保留光学层级，粗糙不等于均匀噪声');
+  ok(grid.includes('do not copy their source pose') && grid.includes('Every visible hand must have a functional task'), '九宫格隔离参考图姿势并按真实任务重排人物');
+  ok(grid.includes('preserving every incoming unfinished action in its current physical phase'), '九宫格入口行保留上游未完成动作');
 
   const syntheticGrid = candidateGridDoc();
   syntheticGrid.style = 'naturalistic';

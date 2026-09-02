@@ -13,7 +13,7 @@
 1. **认领是地基。** 每个分镜声明 `beats:[起,止]`，全场连续区间、不重不漏。切完在心里过一遍：每场第 1 拍到最后一拍都有主吗？
 2. **秒数是下单不是估算。** 分镜秒数直接决定 Shot 切点、Ref2VA Picture 定义与 retention 前缀——改秒数必须同步改 `h3Prompt`，validate 逐字对账，改一边必被拦。
 3. **台词装得下。** 认领节拍的台词秒数 ≤ 分镜秒数。4.4 秒的台词就给 5 秒的切。
-4. **先定时间边界，再定镜头功能和画面密度。** 按 `frame-entry.md` 填 `moment`；每段 f1 强制 `entry`，逐项翻译 startState。再按 `frame-density.md` 填 `role` 与 `density`。`frame` 只写基础构图，最终 imagePrompt 由脚本组装。
+4. **先定时间边界，再定镜头功能和画面密度。** 按 `frame-entry.md` 填 `moment`；每段 f1 强制 `entry`，逐项翻译 startState。entry 只延后本切新动作，startState 已有的搬运、承重和环境动势必须保留。再按 `frame-density.md` 填 `role` 与 `density`。`frame` 只写基础构图，最终 imagePrompt 由脚本组装。
 5. **景别短语进分镜图基础提示词，完整运镜执行计划进自己的 [Shot k]。** 运镜直接用 H3 官方词表（Push In / Pan Left / Tracking Shot…）；按 `camera-direction.md` 填 `cameraPlan` 与 `transition`，速度/幅度和五个 prompt-ready 字段逐字进入自然句。
 6. **每切六层视频视觉、每段完整音频。** 按 `prompt-detail.md` 填 `visualPlan` 与 `audioPlan`；空间、光线、主体、动作、效果、连续性逐字进 Shot，声景和配乐各自进正确字段。
 7. **相邻镜头先对状态再写转场。** 按 `continuity.md` 填 startState/endState、transitionPlan 和段间 handoff；相邻 cut 末态必须等于首态，同场连续段也一样。
@@ -33,6 +33,7 @@
 - **每切有头有尾。** `cameraPlan.start` 对齐分镜图，`target` 说镜头盯谁，`end` 给下一切留下连续状态，`focus` 管景深，`intent` 说明为什么这样拍；缺一项都不是可执行的摄影计划。
 - **按节拍自动调强度。** 普通对话固定或轻推；移动主体跟拍；重台词后反应切；关键动作在动作中切入；悬疑揭示缓推或焦点转移；爽点兑现可以加速但动作结束立即回稳。详见 `camera-direction.md`。
 - **画面密度也按节拍自动调强度。** 运镜强度和画面内容是两套预算：反应特写即使情绪很强也应该 sparse；新空间定场即使运镜固定也应该 rich。详见 `frame-density.md`。
+- **人物先做事，镜头再观察。** 每只手要有任务或自然受重力支撑，视线要有对象，道具按人物使用方向而不是镜头方向摆放；线索不够清楚就换机位或加 insert，不让演员把证物举给观众看。
 - **丰富但不写小说。** 视觉六层只写画面可见信息和本切能完成的动作；声景只写真实发生的声音；配乐强度跟剧情走，不是每段都史诗高潮。详见 `prompt-detail.md`。
 - **切点是同一瞬间。** 先确定上一切 endState，再原样复制为下一切 startState；构图可以跳，剧情状态不能跳。Shot 2 起用承接句和 transitionPlan，连续段用 handoff。详见 `continuity.md`。
 
@@ -45,7 +46,7 @@
 - 画内叙事道具的设定图——有就挂
 - 本段 f1 + 立即上一切——f2 起必挂；连续段的下一段 f1 再挂上一段最后一帧
 
-提示词与参考图冲突时，模型听参考图的——所以提示词专心写构图、**此刻的位置状态**（已上船 / 在舱内 / 在桥头）和姿态，长相材质交给参考图。画面里出现的大资产（船、车、宅门）也要挂它自己的设定图，不挂就每帧长得不一样。
+提示词与参考图冲突时，模型往往听参考图的，所以完整 imagePrompt 会先隔离职责：角色图只锁身份/体型/发型/服装，不继承试镜姿势、手势和手持物；场景图只锁空间/材质/光照，不继承原机位；道具图只锁造型/材质/尺度，不继承白底展示角度。随后提示词专心写构图、**此刻的位置状态**（已上船 / 在舱内 / 在桥头）、动作阶段和姿态。画面里出现的大资产（船、车、宅门）也要挂它自己的设定图，不挂就每帧长得不一样。
 
 ## 常见病
 
@@ -63,7 +64,8 @@
 | 运镜打架 | 同一切同时推、摇、环绕，或用否定句堆一串镜头词 | 一切一个主运镜；需要变化就拆切 |
 | 分镜图过薄 | H3 的 visualPlan 很完整，实际图片仍只有景别和一个动作 | 填 framePlan；复制或 export 脚本组装的完整 imagePrompt，不要直接拿基础 frame 出图 |
 | 分镜图过满 | 反应特写也塞群众、摆件和多条线索 | reaction/insert 使用 sparse，靠光影、材质和留白提升质量，不靠物件数量 |
-| 段首已经在动作中 | f1 画成奔跑中、拍中、回头后，视频从半截开始 | f1 moment=entry；五项 entryStatePrompt 对齐 startState，动作只在0.00秒之后发生 |
+| 摆拍病 | 人物正面排队、对称夹住道具、把证物朝镜头举起，或照抄 screen-test 手势 | 角色参考只锁身份；按手部任务、视线对象、承重与道具真实朝向重新调度，线索用机位/焦点/insert 解决 |
+| 段首已经在动作中 | f1 提前画出本切奔跑、拍中、回头后，或反过来把上游正在搬运的物件重置为静物 | f1 moment=entry；五项 entryStatePrompt 对齐 startState；只延后本切新动作，保留 incoming unfinished action |
 | 视频提示词过薄 | 只有景别、一个动作和运镜，视频空间人物像占位符 | 填 visualPlan 六层；按时长保留最能影响生成的具体信息 |
 | 多图仍写旧对齐行 | 新 seed 有多切，却没有 Ref2VA 六字段 | 按 h3PromptMode=official-auto 重写；Picture 定义/retention 用 h3ReferencePlan(cuts) |
 | 风格只写抽象词 | 选了 h3Style，却只在正文写 cinematic / beautiful | 运行 h3-styles <id>，把确定性风格指纹逐段放进 Shot 1 |

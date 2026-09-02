@@ -18,7 +18,8 @@
 - **每切有可执行的摄影计划** — 新 seed 默认开启 `cameraPlanMode: "cinematic-controlled"`：起始机位、速度/幅度、目标、焦点、结束构图、导演意图和转场逐字进入自己的 `[Shot k]`；固定镜头默认，一切只用一个主运镜
 - **最终提示词达到投产丰富度** — `promptDetailMode: "production-rich"` 要求逐切写空间、光线、主体、动作、效果、连续性，逐段写四层声景和配乐类型/配器/动态/同步点；不是靠字数堆形容词
 - **分镜图按叙事需要自动分配信息量** — `framePlanMode: "adaptive-density"` 按镜头功能选择 sparse / balanced / rich；报告和 export 确定性组装完整 imagePrompt，不再把薄的基础 `frame` 直接交给图像模型
-- **每段从真正的初始帧开始** — `frameEntryMode: "start-boundary"` 强制 f1 展示动作前 entry state，动作只能在0.00秒之后发生；后续子分镜才允许 impact/result
+- **参考图职责隔离，人物按行为重新调度** — 场景图不下传原机位，角色 screen-test 不下传试镜姿势/手势/手持物，道具 master 不下传白底展示角度；手、视线、承重与道具朝向服从剧本任务，不为镜头摆拍
+- **每段从真正的初始帧开始** — `frameEntryMode: "start-boundary"` 强制 f1 展示本切新动作前 entry state；只延后本切动作，保留 startState 已存在的搬运、承重、接触和环境动势；后续子分镜才允许 impact/result
 - **一次粗九宫格后人工选镜** — `candidateMode: "single-grid-rough"` 每段只用一次调用生成粗九格；报告按点击顺序导出 selection.json，选中格再分别生成高清图，衔接由 edgePlans 管
 - **cinematic 严格真人摄影** — 九宫格和终稿都强制真人演员、实体服装/场景、光学镜头与传感器质感，拦截 illustration、concept art、anime、cel shading、3D/CGI/game 信号
 - **相邻镜头共享同一状态边界** — `continuityMode: "state-linked"` 对账每切八项 startState/endState、五项 transitionPlan 和连续段 handoff；Shot 2 起先承接同一瞬间再改变景别/机位
