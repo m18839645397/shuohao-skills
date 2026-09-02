@@ -20,6 +20,7 @@ segment = one video-generation call, new seeds default to 5–10s, never crosses
 - **Final prompts carry production-level detail** — `promptDetailMode: "production-rich"` requires environment, lighting, subject, action, effects and continuity per cut, plus four-layer soundscape and scored music style/instrumentation/arc/sync per segment
 - **Storyboard frames receive role-driven visual density** — `framePlanMode: "adaptive-density"` selects sparse / balanced / rich by shot function; reports and export deterministically compile the full image prompt instead of sending the thin base `frame` to the image model
 - **Reference roles are isolated and people are restaged by behavior** — environment masters do not donate their camera, character screen tests do not donate casting poses, gestures or held objects, and prop masters do not donate studio display angles; hands, gaze, weight and prop orientation follow the dramatic task rather than the lens
+- **Performance blocking has six auditable fields** — new seeds enable `frameBehaviorMode: "causal-blocking"`; every cut with people defines subject priority, body mechanics, hand purpose, eyeline, restrained expression and prop interaction, while empty shots skip it
 - **Every segment starts from a true initial frame** — `frameEntryMode: "start-boundary"` forces f1 to precede the newly claimed action while retaining incoming carrying, weight, contact and environmental motion already present in startState; later sub-frames may carry impact/result moments
 - **One rough grid, then human shot selection** — `candidateMode: "single-grid-rough"` uses one image call per segment; the report exports click-order selection.json, selected cells are regenerated in detail, and edgePlans own their transitions
 - **Strict live-action cinematic** — both rough grids and final frames require real performers, physical costumes/sets, optical lens and sensor response while rejecting illustration, concept art, anime/cel and 3D/CGI/game signals
@@ -31,7 +32,7 @@ Outputs `storyboard.json`, a Markdown shot list, and a self-contained `storyboar
 
 ![storyboard-report.html](assets/report.webp)
 
-## Twenty-three quality gates, all code
+## Twenty-four quality gates, all code
 
 Same stance as the other four skills in this repo: **a checklist the model grades itself on is worthless.**
 
@@ -51,6 +52,7 @@ Same stance as the other four skills in this repo: **a checklist the model grade
 | **Prompt language consistency** | prose audited both ways against `promptLang`: Chinese drama written in English fails, English mode mixing Chinese fails |
 | **Production prompt richness** | six visual-plan layers per cut, four soundscape layers per segment and four scored-music layers appear verbatim in the correct H3 fields with language-aware minimum detail; no music is explicit N/A/无 |
 | **Adaptive frame density** | `framePlan` assigns sparse / balanced / rich content budgets by establishing / dialogue / reaction / action / reveal / insert / atmosphere role; structured counts, sensible role pairings and the compiled image prompt are audited deterministically |
+| **Causal performance blocking** | cuts with people carry six `framePlan.behavior` fields and compile them verbatim into the image prompt; empty shots are exempt and legacy JSON announces the skipped mode |
 | **Cut and segment continuity** | eight end/start state fields match across adjacent cuts; cut point, motion, light, audio and axis bridges enter the right fields; continuous segments audit state and handoff while explicit scene/time jumps may break it |
 | **Style phrase** | static `style` stays consistent; when `h3Style` is selected its deterministic fingerprint appears in every segment's Shot 1 |
 | Frame-prompt hygiene | English-only, non-empty |
@@ -136,7 +138,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # per-se
 node scripts/selftest.mjs
 ```
 
-424 assertions — I2VA/Ref2VA routing and scaffolding, eight H3 styles, stable speaker IDs, cinematic and naturalistic live action, rough grids, human selection, edge plans, entry frames and all twenty-three gates. No model calls.
+445 assertions — I2VA/Ref2VA routing and scaffolding, eight H3 styles, stable speaker IDs, cinematic and naturalistic live action, causal performance blocking, rough grids, human selection, edge plans, entry frames and all twenty-four gates. No model calls.
 
 The bundled `examples/渡口-storyboard.json` remains the complete legacy-compatibility fixture for rhythm, alignment and recipes. New adaptive frame structure is demonstrated in `references/frame-density.md` and exercised by the selftest fixtures.
 

@@ -22,6 +22,8 @@ import {
   FRAME_ENTRY_FIELDS,
   FRAME_ENTRY_MODE,
   FRAME_ENTRY_TOKENS,
+  FRAME_BEHAVIOR_FIELDS,
+  FRAME_BEHAVIOR_MODE,
   FRAME_DENSITIES,
   FRAME_PLAN_ARRAY_FIELDS,
   FRAME_PLAN_MODE,
@@ -224,6 +226,23 @@ const adaptiveFrameDoc = (density = 'balanced', role = 'dialogue') => {
   };
   doc.episodes[0].segments[0].h3Prompt = doc.episodes[0].segments[0].h3Prompt
     .replace('[Shot 1] ', `[Shot 1] ${FRAME_ENTRY_TOKENS.en}. `);
+  return doc;
+};
+
+const behaviorFrameDoc = () => {
+  const doc = adaptiveFrameDoc('balanced', 'action');
+  doc.frameBehaviorMode = FRAME_BEHAVIOR_MODE;
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  cut.characters = ['C01'];
+  cut.props = ['P01'];
+  cut.framePlan.behavior = {
+    primaryFocus: 'The woman and her immediate task dominate while incidental figures stay peripheral and smaller',
+    bodyMechanics: 'Her weight transfers onto the front foot with the rear heel lifted and shoulders counterbalancing the step',
+    handPurpose: 'Her right hand steadies the suitcase while the left hand reaches toward the worn latch',
+    eyeline: 'Her eyes track the suitcase latch below frame level rather than looking toward the camera',
+    expression: 'Tightened lower eyelids and a restrained jaw set show alert concentration without a posed neutral face',
+    propInteraction: 'The suitcase stays compressed against her hip with its broad face angled away from the lens',
+  };
   return doc;
 };
 
@@ -490,7 +509,7 @@ eq(paramsOf({ params: { maxCutSeconds: 4 } }).maxCutSeconds, 4, '分镜上限可
 /* ---------------- 质量门：全绿基线 ---------------- */
 
 ok(gateReport(FIXTURE, CTX).every((g) => g.ok), '样例带全部上游全部门通过');
-eq(gateReport(FIXTURE, CTX).length, 23, '二十三道门');
+eq(gateReport(FIXTURE, CTX).length, 24, '二十四道门');
 ok(gateReport(officialAutoDoc(), CTX).every((g) => g.ok), 'official-auto 把多分镜切换为 Ref2VA 后全部门通过');
 {
   const gates = gateReport(FIXTURE, {});
@@ -955,6 +974,36 @@ eq(h3Remainder('a <d>[Chinese] 你好</d> b "营业中" c'), 'a   b   c', 'h3Rem
 }
 ok(gate(FIXTURE, 'frame-density', CTX).ok && gate(FIXTURE, 'frame-density', CTX).detail.includes('跳过'), '旧 storyboard 没有 framePlanMode 时兼容并明说跳过');
 
+// frame-behavior — 有人物的分镜把表演调度逐项写入完整 imagePrompt；空镜与旧 JSON 兼容
+{
+  const doc = behaviorFrameDoc();
+  const cut = doc.episodes[0].segments[0].cuts[0];
+  const prompt = buildFrameImagePrompt(cut);
+  ok(gate(doc, 'frame-behavior', {}).ok, '六项人物调度完整时通过');
+  eq(FRAME_BEHAVIOR_FIELDS.length, 6, '人物调度覆盖主体、身体、手、视线、表情和道具');
+  ok(FRAME_BEHAVIOR_FIELDS.every((field) => prompt.includes(cut.framePlan.behavior[field])), '六项人物调度逐字进入完整 imagePrompt');
+  ok(prompt.includes('Primary subject hierarchy') && prompt.includes('Observable restrained expression cues'), '完整 imagePrompt 带明确人物调度标签');
+  ok(prompt.includes('exact prop count and exclusive ownership') && prompt.includes('never duplicates'), '完整 imagePrompt 约束道具转移后原位置清空且不得复制');
+}
+{
+  const doc = behaviorFrameDoc();
+  delete doc.episodes[0].segments[0].cuts[0].framePlan.behavior.expression;
+  ok(!gate(doc, 'frame-behavior', {}).ok, '有人物的分镜缺微表情调度被拦');
+}
+{
+  const doc = behaviorFrameDoc();
+  doc.episodes[0].segments[0].cuts[0].framePlan.behavior.bodyMechanics = '站着不动';
+  const g = gate(doc, 'frame-behavior', {});
+  ok(!g.ok && g.detail.includes('必须使用英文'), '人物调度混入中文被拦');
+}
+{
+  const doc = behaviorFrameDoc();
+  doc.episodes[0].segments[0].cuts[0].characters = [];
+  delete doc.episodes[0].segments[0].cuts[0].framePlan.behavior;
+  ok(gate(doc, 'frame-behavior', {}).ok, '空镜不强制人物调度字段');
+}
+ok(gate(FIXTURE, 'frame-behavior', CTX).ok && gate(FIXTURE, 'frame-behavior', CTX).detail.includes('跳过'), '旧 storyboard 未启用 frameBehaviorMode 时兼容并明说跳过');
+
 // frame-entry-state — f1 必须是动作前入口态，不能把动作中段或结果钉在 0.00 秒
 {
   const doc = adaptiveFrameDoc();
@@ -1395,6 +1444,7 @@ eq(seeded.h3PromptMode, H3_PROMPT_MODE, '新 seed 默认开启官方 I2VA／Ref2
 eq(seeded.cameraPlanMode, CAMERA_PLAN_MODE, 'seed 默认开启克制电影化运镜执行计划');
 eq(seeded.promptDetailMode, PROMPT_DETAIL_MODE, 'seed 默认开启投产级丰富提示词');
 eq(seeded.framePlanMode, FRAME_PLAN_MODE, 'seed 默认开启分镜图自适应画面密度');
+eq(seeded.frameBehaviorMode, FRAME_BEHAVIOR_MODE, 'seed 默认开启因果式人物调度');
 eq(seeded.frameEntryMode, FRAME_ENTRY_MODE, 'seed 默认强制段首 f1 对齐动作入口态');
 eq(seeded.candidateMode, CANDIDATE_MODE, 'seed 默认开启单图粗九宫格候选模式');
 eq(seeded.selectionMode, SELECTION_MODE, 'seed 默认使用人工顺序选择');
@@ -1450,7 +1500,7 @@ ok(html.includes('分镜节奏带'), '01 分镜节奏带');
 ok(html.includes('分集分镜表'), '02 分集分镜表');
 ok(html.includes('生成批次单'), '03 生成批次单');
 ok(html.includes('配音对齐单'), '04 配音对齐单');
-ok(html.includes('✓ 质量门 23 / 23'), '页眉徽章全绿');
+ok(html.includes('✓ 质量门 24 / 24'), '页眉徽章全绿');
 ok(html.includes('class="rseg"'), '节奏带按段分组（粗分隔）');
 ok(html.includes('#seg-E01-01'), '节奏带段可跳转');
 ok(html.includes('主分镜图 · #1 未生成'), '主分镜图缺图时显示占位不装有');
@@ -1533,7 +1583,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
   const en = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(en.includes('<html lang="en">'), 'en 报告的 html lang 属性跟着语言走');
   ok(en.includes('Export JSON'), 'en 界面：导出按钮英文');
-  ok(en.includes('Quality gates 23 / 23'), 'en 界面：页眉徽章英文');
+  ok(en.includes('Quality gates 24 / 24'), 'en 界面：页眉徽章英文');
   ok(en.includes('Cut rhythm strip'), 'en 界面：节奏带节标题英文');
   ok(en.includes('Segment cards'), 'en 界面：分镜表节标题英文');
   ok(en.includes('Generation batches'), 'en 界面：批次节标题英文');
@@ -1573,6 +1623,7 @@ ok(html.includes('老周'), 'html 里 ID 换成名字');
 {
   const gateEn = renderHtml(FIXTURE, { ...CTX, lang: 'en' });
   ok(gateEn.includes('Every cut 2–5s'), 'EN 报告的质量门标签翻译且阈值原样保留');
+  ok(gateEn.includes('Cuts with people define subject priority'), 'EN 报告包含人物调度质量门翻译');
   ok(!gateEn.includes('每个分镜 2–5 秒'), 'EN 报告不再出现中文门标签');
   ok(gateEn.includes('no recipe card library mounted'), 'EN 报告的跳过说明也翻译');
 }

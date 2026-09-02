@@ -13,7 +13,7 @@
 1. **认领是地基。** 每个分镜声明 `beats:[起,止]`，全场连续区间、不重不漏。切完在心里过一遍：每场第 1 拍到最后一拍都有主吗？
 2. **秒数是下单不是估算。** 分镜秒数直接决定 Shot 切点、Ref2VA Picture 定义与 retention 前缀——改秒数必须同步改 `h3Prompt`，validate 逐字对账，改一边必被拦。
 3. **台词装得下。** 认领节拍的台词秒数 ≤ 分镜秒数。4.4 秒的台词就给 5 秒的切。
-4. **先定时间边界，再定镜头功能和画面密度。** 按 `frame-entry.md` 填 `moment`；每段 f1 强制 `entry`，逐项翻译 startState。entry 只延后本切新动作，startState 已有的搬运、承重和环境动势必须保留。再按 `frame-density.md` 填 `role` 与 `density`。`frame` 只写基础构图，最终 imagePrompt 由脚本组装。
+4. **先定时间边界，再定镜头功能、画面密度和人物调度。** 按 `frame-entry.md` 填 `moment`；每段 f1 强制 `entry`，逐项翻译 startState。entry 只延后本切新动作，startState 已有的搬运、承重和环境动势必须保留。再按 `frame-density.md` 填 `role` / `density`；有人物时按 `frame-behavior.md` 填 `framePlan.behavior` 六项。`frame` 只写基础构图，最终 imagePrompt 由脚本组装。
 5. **景别短语进分镜图基础提示词，完整运镜执行计划进自己的 [Shot k]。** 运镜直接用 H3 官方词表（Push In / Pan Left / Tracking Shot…）；按 `camera-direction.md` 填 `cameraPlan` 与 `transition`，速度/幅度和五个 prompt-ready 字段逐字进入自然句。
 6. **每切六层视频视觉、每段完整音频。** 按 `prompt-detail.md` 填 `visualPlan` 与 `audioPlan`；空间、光线、主体、动作、效果、连续性逐字进 Shot，声景和配乐各自进正确字段。
 7. **相邻镜头先对状态再写转场。** 按 `continuity.md` 填 startState/endState、transitionPlan 和段间 handoff；相邻 cut 末态必须等于首态，同场连续段也一样。

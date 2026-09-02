@@ -14,7 +14,7 @@
 | [**novel-characters**](skills/novel-characters) | 群像视觉矩阵 + 角色资产；cinematic 采用严格真人定妆摄影，并另出 screen-test 单帧供分镜使用，避免三视图的动画/目录感下传 |
 | [**novel-art**](skills/novel-art) | 场景 + 叙事道具资产；cinematic 使用真实地点/实体搭景连续性摄影，禁止概念图、动画和3D/CGI信号。11道门脚本检查 |
 | [**novel-script**](skills/novel-script) | 给 AI 短剧写剧本：场次 + 节拍流（动作与台词交替），逐集时长按语速确定性折算；每场入口状态 + 每个动作拍 `statePatch` 计算剧情状态链，台词本按角色聚合并直接对接 TTS。11 道质量门全部脚本检查 |
-| [**novel-storyboard**](skills/novel-storyboard) | 每段粗九宫格→人工选 N 格→高清终稿；参考图职责隔离并按手/视线/承重/道具朝向重新调度人物；H3 单图自动走 I2VA、多图走 Ref2VA；23 道门检查 Picture/Shot/台词/状态与连续性 |
+| [**novel-storyboard**](skills/novel-storyboard) | 每段粗九宫格→人工选 N 格→高清终稿；人物逐切带主体/身体/手/视线/微表情/道具六项因果调度；H3 单图自动走 I2VA、多图走 Ref2VA；24 道门检查 Picture/Shot/台词/状态与连续性 |
 
 **五个 skill 的报告都支持中英双语界面**：默认中文，`render --lang en` 出全英文报告（数据内容保持原文）。
 

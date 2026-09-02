@@ -14,6 +14,7 @@
 
 - `frame`：基础英文提示词，只保存景别、主体、基础构图和统一风格短语。
 - `framePlan`：时间语义、五项入口态、镜头功能、sparse/balanced/rich 密度、关键瞬间、前后景、叙事线索、气氛和排除项。
+- `framePlan.behavior`：有人物时的六项因果调度——主体优先级、身体力学、手部任务、视线、微表情、道具交互；详见 `frame-behavior.md`。
 - `buildFrameImagePrompt()`：确定性合并参考图职责、`frame`、`framePlan`、链式连续性和固定负面约束。
 
 报告里的「完整分镜图提示词」复制按钮和 `export` 的 `fN.prompt.md` 都使用组装结果。**不要再直接复制 JSON 里的薄 `frame` 去出图。**
@@ -35,6 +36,8 @@
 完整 imagePrompt 开头已经声明环境、角色和道具参考图的职责；实际调用时仍要按附件顺序明确哪张是环境、谁的角色图、哪件道具图，别让模型猜。
 
 人物行为同样是硬要求：每只可见的手必须有现实任务或自然受重力支撑；视线有明确对象；道具朝使用者、支撑面或实际光源，不为镜头展示；人物允许错层、遮挡和不完整露出。除非剧本明确要求，不得正面排队、对称夹住道具或复制 casting/screen-test 的姿势。
+
+完整 imagePrompt 会把 `framePlan.behavior` 六项分别标成主体层级、身体动作相位、手部功能、视线、表情和道具交互。不要把六项合并成一句“自然地站着”：移动要写后跟/重心/肩胯反馈，反应要写可见微表情，匿名人物要明确较小且边缘化。
 
 f2 起固定追加：`Preserve the exact subject pose, position, screen direction, prop state, light level and physical event from the previous-cut reference. Continue from the same instant; change only the shot size and camera composition required by this frame.` 连续段 f1 把 `previous-cut` 改成 `previous-segment final-frame`。
 
@@ -64,5 +67,8 @@ f2 起固定追加：`Preserve the exact subject pose, position, screen directio
 - rich 镜头是否有清楚的前中后景和至少两条叙事线索，而不是只多了无关摆件
 - sparse 镜头是否保持单一视觉中心、材质和光影细节，而不是低质量空白
 - 人物是否像正在处理事情：手有功能、视线有对象、道具不朝镜头展示；有没有照抄 screen-test 手势、正面排队、对称夹物或冻结群像
+- `primaryFocus` 是否执行：匿名或辅助人物有没有意外成为最大前景；`bodyMechanics` 写了移动时，画面有没有清楚的脚步/重心相位
+- `expression` 是否真正可读：克制不是中性空白脸，提示词要求的下眼睑、嘴唇、下颌或呼吸信号至少出现一项
+- 道具数量和归属是否唯一：已经摘下/转交的卡片、手机、钥匙不能在原位置和新持有人手中各出现一份
 - naturalistic 是否只有焦平面最清楚，皮肤/发丝/磨损按部位局部分布，承重、接触、衣物和地面反馈符合物理因果
 - 有没有多出来的人（背景围观群众是最常见污染）——多人就重生成

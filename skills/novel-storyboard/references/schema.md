@@ -12,6 +12,7 @@
   "cameraPlanMode": "cinematic-controlled",
   "promptDetailMode": "production-rich",
   "framePlanMode": "adaptive-density",
+  "frameBehaviorMode": "causal-blocking",
   "frameEntryMode": "start-boundary",
   "candidateMode": "single-grid-rough",
   "selectionMode": "human-ordered",
@@ -57,7 +58,7 @@
 | `cameraPlan` | object | 克制电影化执行计划：`pace`、`magnitude`、`start`、`target`、`end`、`focus`、`intent`；五个文本字段跟随 `promptLang`，是要逐字写进 H3 的 prompt-ready 原句 |
 | `transition` | enum | 本切如何从上一切进入：`straight-cut` / `cut-on-action` / `reaction-cut` / `match-cut` / `reveal-cut` |
 | `visualPlan` | object | 投产视觉计划：`environment` / `lighting` / `subject` / `action` / `effects` / `continuity`，跟随 promptLang，逐字进入本切 `[Shot k]` |
-| `framePlan` | object | 分镜图计划：`moment` / `entryStatePrompt` + `role` / `density` / `keyMoment` / `composition` / `atmosphere` / `foreground[]` / `background[]` / `storyCues[]` / `exclude[]`。现有字段同时负责行为因果：手部任务、视线对象、承重接触和道具真实朝向写进 keyMoment/composition/entryStatePrompt，不另造摆拍式展示状态。段首 moment 强制 entry；详见 `frame-entry.md`、`frame-density.md` |
+| `framePlan` | object | 分镜图计划：`moment` / `entryStatePrompt` + `role` / `density` / `keyMoment` / `composition` / `atmosphere` / `foreground[]` / `background[]` / `storyCues[]` / `exclude[]`；有人物时再带 `behavior` 六项：primaryFocus / bodyMechanics / handPurpose / eyeline / expression / propInteraction。段首 moment 强制 entry；详见 `frame-entry.md`、`frame-density.md`、`frame-behavior.md` |
 | `startState` / `endState` | object | 连续状态八项：location、subjectPosition、bodyPose、gaze、propState、lightState、effectState、screenDirection；相邻 cut 强制前末态 = 后首态 |
 | `transitionPlan` | object | Shot 2 起的动作桥：cutPoint、motionCarry、lightCarry、audioCarry、axisCarry；前四个视觉字段进入当前 Shot，audioCarry 进入声景 |
 | `characters` | string[] | 画内人物（C 编号），必须 ⊆ 剧本该场人物；空镜给空数组。> `maxOnScreen` 时必须带 `note` |

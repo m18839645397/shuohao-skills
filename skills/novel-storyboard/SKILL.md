@@ -1,6 +1,6 @@
 ---
 name: novel-storyboard
-version: 1.17.0
+version: 1.18.0
 description: |
   给 AI 短剧出分镜：三层结构——段（新 seed 默认 5–10 秒，一次视频生成）→ 分镜（段内 2–5 秒的剪切，认领剧本节拍）
   → 分镜图（每切一张关键帧：主分镜图钉 0.00 秒，子分镜图钉各自切点）。
@@ -10,6 +10,7 @@ description: |
   可从 MiniMax 官方其余 8 个技能选择 h3Style，逐段锁定视频运动/包装指纹；每切带克制电影化 cameraPlan，明确起点、目标、焦点、
   速度/幅度、结束构图、导演意图与转场；投产级丰富模式逐切写空间、光线、主体、动作、效果与连续性，
   静态分镜图按镜头功能自动分配 sparse/balanced/rich 画面密度并确定性组装完整 imagePrompt，
+  有人物的分镜再用 causal-blocking 六项调度锁定主体优先级、身体力学、手部任务、视线、微表情和道具交互，
   角色/场景/道具参考图只继承各自职责，隔离试镜姿势、白底展示角度和原图机位；每段 f1 强制对齐动作前 entry state，
   只有本切新动作在0.00秒之后开始，startState 已存在的搬运、承重、接触和环境动势必须保留，
   每段可先用一次调用生成粗略九宫格，人工按顺序选择 N 格后再分别生成高清终稿，并以 edgePlan 处理相邻衔接，
@@ -17,7 +18,7 @@ description: |
   银幕方向和动作/声音桥，避免硬切与状态重置。
   产出 storyboard.json + Markdown + 单页评审报告（分镜节奏带 / 分集分镜表 / 生成批次单 /
   配音对齐单，含导出 JSON）。分镜图出图拿场景与角色设定图当参考图走 codex $imagegen（可选）。
-  23 道质量门全部由脚本确定性检查（含九宫格人工选择、边运镜、分镜图密度、段首入口帧、剧本状态继承；shot-recipe 可选挂载）；
+  24 道质量门全部由脚本确定性检查（含人物因果调度、九宫格人工选择、边运镜、分镜图密度、段首入口帧、剧本状态继承；shot-recipe 可选挂载）；
   export 一键导出 H3 提示词、逐切完整分镜图提示词和按 Picture 序的分镜图清单。零依赖、零 API key，用当前会话额度。
   Use when asked to 分镜、出分镜、镜头表、切镜、storyboard for AI short drama。
 allowed-tools:
@@ -87,13 +88,13 @@ metadata:
 node {baseDir}/scripts/novel-storyboard.mjs seed <script.json> --eps 1-3 > <workdir>/storyboard.json
 ```
 
-确定性展开逐拍状态，并默认写入 `candidateMode: "single-grid-rough"`、`selectionMode: "human-ordered"`、`edgePlanMode: "edge-driven"` 及现有运镜、丰富度、入口帧、连续性模式。
+确定性展开逐拍状态，并默认写入 `frameBehaviorMode: "causal-blocking"`、`candidateMode: "single-grid-rough"`、`selectionMode: "human-ordered"`、`edgePlanMode: "edge-driven"` 及现有运镜、丰富度、入口帧、连续性模式。
 
 ### Step 2 — 逐集分段切镜
 
 每集一份任务，能并发就并发。每份任务拿到：
 
-- `{baseDir}/references/storyboard-pass.md`、`camera-direction.md`、`prompt-detail.md`、`candidate-grid.md`、`frame-entry.md`、`frame-density.md`、`continuity.md`、`h3-prompt.md` 和 `schema.md`（读它们，照着做）；顶层选了 `h3Style` 再读 `h3-styles.md`
+- `{baseDir}/references/storyboard-pass.md`、`camera-direction.md`、`prompt-detail.md`、`candidate-grid.md`、`frame-entry.md`、`frame-density.md`、`frame-behavior.md`、`continuity.md`、`h3-prompt.md` 和 `schema.md`（读它们，照着做）；顶层选了 `h3Style` 再读 `h3-styles.md`
 - 该集的 seedScenes 底稿 + 场景卡（art.json 的锚点与光照提示词）+ 角色卡（cast.json 的形象要点）
 
 流程先按剧情单元分段，为每段写固定九格 `candidateBoard.cells`，用 export 的 `candidate-grid.prompt.md` 一次生成粗图。报告中人工按播放顺序选 N 格并导出 selection.json；`select` 写回后，按 selected 重排 cuts，补齐 candidateId 与 N−1 条 edgePlans，再生成高清终稿与 H3。
@@ -104,6 +105,8 @@ node {baseDir}/scripts/novel-storyboard.mjs select <storyboard.json> <selection.
 ```
 
 **画面密度不是剧情强度，也不是摆拍程度的同义词**：新空间定场和复杂关系用 rich；普通对话用 balanced；反应、停顿和手部/道具特写用 sparse。三档都必须服从人物行为因果，不能为了让观众看清线索而让角色把证物正对镜头。强烈情绪的脸部特写仍应克制，靠微表情、材质、光影和留白，而不是塞背景物件。最终出图不直接使用基础 `frame`，必须使用报告复制按钮或 export 生成的完整 imagePrompt。
+
+**有人物就必须写 `framePlan.behavior` 六项**：`primaryFocus` / `bodyMechanics` / `handPurpose` / `eyeline` / `expression` / `propInteraction`，详见 `frame-behavior.md`。它们是从剧本状态翻译出来的摄影调度，不是抽象形容词；空镜不写。
 
 **每段写一条 `h3Prompt`**，照 `{baseDir}/references/h3-prompt.md` 写（官方方法论内化版，**不依赖任何外部 skill**）。cuts 完成后先运行 `h3-scaffold <storyboard.json> [--segment E01-01]` 取得可填充骨架；新 seed 的 `h3PromptMode: "official-auto"` 会让单 cut 用 I2VA、多 cut 用 Ref2VA，Picture 定义和 retention 前缀由 `h3ReferencePlan(cuts)` 推导。官方自动模式固定英文；**每个镜头独立一行**。Shot 2 起先写同一瞬间承接句和 transitionPlan，再改变景别/机位；连续段 Shot 1 先写段间承接句和 handoff。台词必须在正确 Shot 逐字进 `<d>`，按本段首次发声顺序分配并复用 `(Sx)`；cameraPlan/visualPlan 逐字进自己的 Shot，audioPlan 进入声景与配乐字段。
 
@@ -119,7 +122,7 @@ node {baseDir}/scripts/novel-storyboard.mjs validate <storyboard.json> \
   [--shots </path/to/cards>]
 ```
 
-23 道质量门全是代码：新增 `candidate-grid-selection`，检查九格固定布局、人工选择数量和顺序、cuts/candidateId 对账、N−1 条 edgePlans 及目标 cut 运镜一致性。
+24 道质量门全是代码：`frame-behavior` 检查有人物的分镜六项因果调度逐字进入完整 imagePrompt；`candidate-grid-selection` 检查九格固定布局、人工选择数量和顺序、cuts/candidateId 对账、N−1 条 edgePlans 及目标 cut 运镜一致性。
 
 **有违规逐条修，改完重跑，直到通过。**
 
@@ -211,7 +214,7 @@ node {baseDir}/scripts/novel-storyboard.mjs stats
 node {baseDir}/scripts/selftest.mjs
 ```
 
-434 项断言，不调模型、不花额度。23 道门包含 I2VA/Ref2VA 路由与骨架、8 种 H3 风格、说话人编号、cinematic、naturalistic、参考图职责隔离、人物行为因果、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
+445 项断言，不调模型、不花额度。24 道门包含 I2VA/Ref2VA 路由与骨架、8 种 H3 风格、说话人编号、cinematic、naturalistic、参考图职责隔离、人物因果调度、九宫格和终稿动画/CG信号击穿。改完脚本先跑这个。
 
 ## 自带样例
 

@@ -86,6 +86,9 @@ export const FRAME_ROLES = ['establishing', 'dialogue', 'reaction', 'action', 'r
 export const FRAME_DENSITIES = ['sparse', 'balanced', 'rich'];
 export const FRAME_PLAN_TEXT_FIELDS = ['keyMoment', 'composition', 'atmosphere'];
 export const FRAME_PLAN_ARRAY_FIELDS = ['foreground', 'background', 'storyCues', 'exclude'];
+/** 人物调度：有人物的分镜逐项写主体优先级、身体力学、手、视线、表情和道具交互。 */
+export const FRAME_BEHAVIOR_MODE = 'causal-blocking';
+export const FRAME_BEHAVIOR_FIELDS = ['primaryFocus', 'bodyMechanics', 'handPurpose', 'eyeline', 'expression', 'propInteraction'];
 /** 段首 f1 的时间语义：必须展示动作前入口态，动作只在 0.00 秒之后发生。 */
 export const FRAME_ENTRY_MODE = 'start-boundary';
 export const FRAME_MOMENTS = ['entry', 'transition', 'impact', 'result'];
@@ -159,8 +162,16 @@ const FRAME_REFERENCE_INSTRUCTIONS = {
   ],
   prop: 'Use the attached prop references only for identity, material, scale and construction; ignore their studio background, hero angle, display orientation, lighting and framing, then restage each prop from its holder, support, gravity and contact in this frame.',
 };
-const FRAME_BEHAVIOR_INSTRUCTION = 'Stage people as observed mid-situation, not arranged for a photograph. Every visible hand must have a functional task or settle under gravity; each gaze follows another person, the current task or a relevant prop. A narrative prop faces its user, support or practical light, not the camera for display, unless the beat explicitly requires direct presentation. Preserve plausible balance, weight transfer, contact, unequal depth and partial occlusion; avoid front-facing lineups and symmetrical tableaux.';
+const FRAME_BEHAVIOR_INSTRUCTION = 'Stage people as observed mid-situation, not arranged for a photograph. The primary narrative subject and task must dominate while anonymous or incidental figures stay peripheral and smaller unless the frame explicitly says otherwise. Every visible hand must have a functional task or settle under gravity; each gaze follows another person, the current task or a relevant prop. When movement is present, show one unambiguous physical phase through weight transfer, heel lift, pelvis and shoulder counterbalance, cloth displacement or object response. Translate the stated emotion into one or two restrained observable facial cues rather than a blank neutral portrait. A narrative prop faces its user, support or practical light, not the camera for display, unless the beat explicitly requires direct presentation. Preserve the exact prop count and exclusive ownership: after a prop is detached, transferred, consumed or destroyed, it disappears from its former location and never duplicates. Preserve plausible balance, contact, unequal depth and partial occlusion; avoid front-facing lineups and symmetrical tableaux.';
 const FRAME_ENTRY_INSTRUCTION = 'This is the exact action-entry state at 0.00 seconds. Only the new action claimed by this shot begins after this still frame. Preserve the physical phase and cause of every unfinished incoming action or environmental motion already present in the start state; do not reset people and props into a frozen tableau.';
+const FRAME_BEHAVIOR_LABELS = {
+  primaryFocus: 'Primary subject hierarchy',
+  bodyMechanics: 'Body mechanics and exact action phase',
+  handPurpose: 'Functional purpose of every visible hand',
+  eyeline: 'Eyeline and attention target',
+  expression: 'Observable restrained expression cues',
+  propInteraction: 'Prop contact, ownership and orientation',
+};
 
 /**
  * 单切结构化 framePlan → 真正交给 imagegen 的完整英文提示词。
@@ -200,6 +211,12 @@ export function buildFrameImagePrompt(cut, { cutIndex = 0, segmentContinuous = f
   }
   if (base) lines.push(base);
   if (hasText(plan.keyMoment)) lines.push(`Keyframe moment: ${plan.keyMoment.trim()}.`);
+  const behavior = plan.behavior;
+  if (behavior && typeof behavior === 'object' && !Array.isArray(behavior)) {
+    for (const field of FRAME_BEHAVIOR_FIELDS) {
+      if (hasText(behavior[field])) lines.push(`${FRAME_BEHAVIOR_LABELS[field]}: ${behavior[field].trim()}.`);
+    }
+  }
   if (hasText(plan.composition)) lines.push(`Composition: ${plan.composition.trim()}.`);
   const foreground = list('foreground');
   const background = list('background');
@@ -918,7 +935,7 @@ export function gateReport(board, ctx = {}) {
   const bad = {
     coverage: [], segCap: [], cutLen: [], fit: [], duration: [], crowd: [],
     id: [], size: [], camera: [], english: [], names: [], refs: [],
-    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], framePlan: [], frameEntry: [], candidate: [], continuity: [], scriptState: [],
+    h3s: [], h3d: [], h3e: [], style: [], recipe: [], cameraPlan: [], promptDetail: [], framePlan: [], frameBehavior: [], frameEntry: [], candidate: [], continuity: [], scriptState: [],
   };
   // 配方卡库是可选挂载：ctx.recipes 为空就整门跳过（不是「没有 cut 带 recipe」就跳过）
   const recipes = ctx.recipes ?? null;
@@ -946,6 +963,10 @@ export function gateReport(board, ctx = {}) {
   const framePlanRequired = board?.framePlanMode === FRAME_PLAN_MODE;
   if (board?.framePlanMode && !framePlanRequired) {
     bad.framePlan.push(`framePlanMode「${board.framePlanMode}」不支持，应为「${FRAME_PLAN_MODE}」`);
+  }
+  const frameBehaviorRequired = board?.frameBehaviorMode === FRAME_BEHAVIOR_MODE;
+  if (board?.frameBehaviorMode && !frameBehaviorRequired) {
+    bad.frameBehavior.push(`frameBehaviorMode「${board.frameBehaviorMode}」不支持，应为「${FRAME_BEHAVIOR_MODE}」`);
   }
   const frameEntryRequired = board?.frameEntryMode === FRAME_ENTRY_MODE;
   if (board?.frameEntryMode && !frameEntryRequired) {
@@ -1472,6 +1493,28 @@ export function gateReport(board, ctx = {}) {
             }
           }
         }
+        if (frameBehaviorRequired && (cut?.characters ?? []).length) {
+          const behavior = cut?.framePlan?.behavior;
+          if (!behavior || typeof behavior !== 'object' || Array.isArray(behavior)) {
+            bad.frameBehavior.push(`${cid} 有画内人物但缺 framePlan.behavior`);
+          } else {
+            const imagePrompt = buildFrameImagePrompt(cut, {
+              cutIndex: ci,
+              segmentContinuous: seg?.handoff?.kind === 'continuous',
+              styleId,
+            });
+            for (const field of FRAME_BEHAVIOR_FIELDS) {
+              const value = hasText(behavior[field]) ? behavior[field].trim() : '';
+              if (!value) {
+                bad.frameBehavior.push(`${cid}.framePlan.behavior.${field} 为空`);
+                continue;
+              }
+              if (value.length < 24) bad.frameBehavior.push(`${cid}.framePlan.behavior.${field} 太短（${value.length} 字符，至少 24）`);
+              if (CJK.test(value)) bad.frameBehavior.push(`${cid}.framePlan.behavior.${field} 必须使用英文`);
+              if (!imagePrompt.includes(value)) bad.frameBehavior.push(`${cid}.framePlan.behavior.${field} 没有逐字进入完整 imagePrompt`);
+            }
+          }
+        }
         if (frameEntryRequired) {
           const plan = cut?.framePlan;
           if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
@@ -1764,6 +1807,12 @@ export function gateReport(board, ctx = {}) {
     bad.framePlan.length ? bad.framePlan.join('；') : framePlanRequired ? '' : `未启用 framePlanMode=${FRAME_PLAN_MODE}，分镜图密度检查跳过`,
   );
   add(
+    'frame-behavior',
+    '有人物的分镜逐项约束主体优先级／身体力学／手部任务／视线／微表情／道具交互，并进入完整 imagePrompt',
+    bad.frameBehavior.length === 0,
+    bad.frameBehavior.length ? bad.frameBehavior.join('；') : frameBehaviorRequired ? '' : `未启用 frameBehaviorMode=${FRAME_BEHAVIOR_MODE}，人物调度检查跳过`,
+  );
+  add(
     'frame-entry-state',
     '每段 f1 是动作前 entry state，人物／姿态／视线／道具／效果完整，动作仅在 0.00 秒后开始',
     bad.frameEntry.length === 0,
@@ -1892,6 +1941,7 @@ export function seedFromScript(script, epRange = null, options = {}) {
     cameraPlanMode: CAMERA_PLAN_MODE,
     promptDetailMode: PROMPT_DETAIL_MODE,
     framePlanMode: FRAME_PLAN_MODE,
+    frameBehaviorMode: FRAME_BEHAVIOR_MODE,
     frameEntryMode: FRAME_ENTRY_MODE,
     candidateMode: CANDIDATE_MODE,
     selectionMode: SELECTION_MODE,
@@ -2022,6 +2072,7 @@ const GATE_LABELS_EN = {
   'h3-lang': 'Prompt language matches the promptLang setting',
   'prompt-detail': 'Production-rich prompt: visual layers per cut, layered soundscape and scored music arc per segment',
   'frame-density': 'Frame prompts use role-driven sparse / balanced / rich density and compile into the final image prompt',
+  'frame-behavior': 'Cuts with people define subject priority, body mechanics, hand purpose, eyeline, expression and prop interaction in the compiled image prompt',
   'frame-entry-state': 'Every segment f1 is a pre-action entry state; motion starts only after the 0.00-second frame',
   'candidate-grid-selection': 'Each segment has one rough nine-cell grid; human selection runs entry to result and audits cuts plus edge plans',
   'style-phrase': 'Frame style stays consistent; the selected H3 style fingerprint appears in every segment',
@@ -2042,6 +2093,7 @@ const GATE_SKIPS_EN = {
     [`未启用 cameraPlanMode=${CAMERA_PLAN_MODE}，执行计划检查跳过`]: `cameraPlanMode=${CAMERA_PLAN_MODE} not enabled — execution-plan checks skipped`,
     [`未启用 promptDetailMode=${PROMPT_DETAIL_MODE}，丰富度检查跳过`]: `promptDetailMode=${PROMPT_DETAIL_MODE} not enabled — richness checks skipped`,
     [`未启用 framePlanMode=${FRAME_PLAN_MODE}，分镜图密度检查跳过`]: `framePlanMode=${FRAME_PLAN_MODE} not enabled — frame-density checks skipped`,
+    [`未启用 frameBehaviorMode=${FRAME_BEHAVIOR_MODE}，人物调度检查跳过`]: `frameBehaviorMode=${FRAME_BEHAVIOR_MODE} not enabled — performance-blocking checks skipped`,
     [`未启用 frameEntryMode=${FRAME_ENTRY_MODE}，入口帧检查跳过`]: `frameEntryMode=${FRAME_ENTRY_MODE} not enabled — entry-frame checks skipped`,
     [`未启用 candidateMode=${CANDIDATE_MODE}，九宫格候选检查跳过`]: `candidateMode=${CANDIDATE_MODE} not enabled — candidate-grid checks skipped`,
     [`未启用 continuityMode=${CONTINUITY_MODE}，连续性检查跳过`]: `continuityMode=${CONTINUITY_MODE} not enabled — continuity checks skipped`,

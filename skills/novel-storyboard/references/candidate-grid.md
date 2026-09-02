@@ -78,6 +78,8 @@ node scripts/novel-storyboard.mjs select storyboard.json selection.json \
 5. 为相邻选择填写 N−1 条 `edgePlans`；
 6. 完成后改为 `needsReplan: false`。
 
+重排高清 cuts 时，有画内人物的每一切还必须补齐 `framePlan.behavior` 六项。粗九宫格只负责选大构图和动作阶段，不能替代终稿对主体优先级、脚步/重心、手部任务、视线、微表情和道具朝向的明确调度。
+
 ## edgePlans
 
 ```json

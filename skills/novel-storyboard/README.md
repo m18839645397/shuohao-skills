@@ -19,6 +19,7 @@
 - **最终提示词达到投产丰富度** — `promptDetailMode: "production-rich"` 要求逐切写空间、光线、主体、动作、效果、连续性，逐段写四层声景和配乐类型/配器/动态/同步点；不是靠字数堆形容词
 - **分镜图按叙事需要自动分配信息量** — `framePlanMode: "adaptive-density"` 按镜头功能选择 sparse / balanced / rich；报告和 export 确定性组装完整 imagePrompt，不再把薄的基础 `frame` 直接交给图像模型
 - **参考图职责隔离，人物按行为重新调度** — 场景图不下传原机位，角色 screen-test 不下传试镜姿势/手势/手持物，道具 master 不下传白底展示角度；手、视线、承重与道具朝向服从剧本任务，不为镜头摆拍
+- **人物表演有六项可校验调度** — 新 seed 默认 `frameBehaviorMode: "causal-blocking"`；有人物的分镜逐项写主体优先级、身体力学、手部任务、视线、微表情和道具交互，空镜跳过
 - **每段从真正的初始帧开始** — `frameEntryMode: "start-boundary"` 强制 f1 展示本切新动作前 entry state；只延后本切动作，保留 startState 已存在的搬运、承重、接触和环境动势；后续子分镜才允许 impact/result
 - **一次粗九宫格后人工选镜** — `candidateMode: "single-grid-rough"` 每段只用一次调用生成粗九格；报告按点击顺序导出 selection.json，选中格再分别生成高清图，衔接由 edgePlans 管
 - **cinematic 严格真人摄影** — 九宫格和终稿都强制真人演员、实体服装/场景、光学镜头与传感器质感，拦截 illustration、concept art、anime、cel shading、3D/CGI/game 信号
@@ -30,7 +31,7 @@
 
 ![storyboard-report.html](assets/report.webp)
 
-## 质量门：23 道，全是代码
+## 质量门：24 道，全是代码
 
 与仓库里另外四个 skill 同一主张：**checklist 交给模型自觉是靠不住的**。
 
@@ -50,6 +51,7 @@
 | **提示词语言一致** | 正文语言与 `promptLang` 双向对账：设定中文写成英文、设定英文混进中文，都拦 |
 | **投产提示词丰富度** | 逐切 `visualPlan` 六层、逐段声景四层和有配乐时的音乐四层逐字进入对应 H3 字段，并设中英文最低信息量；无配乐明确 N/A/无 |
 | **分镜图自适应密度** | `framePlan` 按 establishing / dialogue / reaction / action / reveal / insert / atmosphere 分配 sparse / balanced / rich 内容预算；字段数量、合理搭配和完整 imagePrompt 确定性检查 |
+| **人物因果调度** | 有人物的分镜必须写 `framePlan.behavior` 六项，并逐字进入完整 imagePrompt；空镜免填，旧 JSON 未启用模式时明确跳过 |
 | **镜间与段间连续性** | 相邻 cut 的八项末态/首态逐字相等，Shot 2 起切点/动作/光线/声音/轴线桥进入正确字段；同场连续 segment 的状态和 handoff 对账，换场/时间跳跃显式豁免 |
 | **风格短语统一** | 静态 `style` 保持同剧画风；选了 `h3Style` 后，其确定性风格指纹逐段进入 Shot 1 |
 | 分镜图提示词卫生 | 全英文非空 |
@@ -146,7 +148,7 @@ node scripts/novel-storyboard.mjs export sb.json --script script.json   # H3 + �
 SKILL.md                 给 agent 读的工作流
 scripts/
   novel-storyboard.mjs   seed / h3-styles / h3-scaffold / select / validate / checkup / render / export / slug
-  selftest.mjs           424 项断言，不调模型
+  selftest.mjs           445 项断言，不调模型
 references/
   schema.md              storyboard.json 结构 + 时长约束链
   h3-prompt.md           H3 提示词写法规范（官方方法论内化版）
@@ -156,6 +158,7 @@ references/
   candidate-grid.md      单图粗九宫格、人工顺序选择、edge-driven 运镜
   frame-entry.md         段首 f1 动作入口态与 H3 0.00 秒起动边界
   frame-density.md       分镜图自适应 sparse / balanced / rich 画面密度
+  frame-behavior.md      人物主体层级 / 动作相位 / 手 / 视线 / 表情 / 道具交互
   continuity.md          镜间状态链、动作/光线/声音桥、段间 handoff
   storyboard-pass.md     切镜：分段规则、导演运镜手感、常见病
   frame.md               分镜图出图的 codex 调用契约
@@ -172,6 +175,6 @@ assets/
 node scripts/selftest.mjs
 ```
 
-424 项断言，覆盖 I2VA/Ref2VA 自动路由与骨架、8 种 H3 风格、稳定说话人编号、cinematic、naturalistic 现实分镜、九宫格、人工选择、edgePlans、入口帧和 23 道门。
+445 项断言，覆盖 I2VA/Ref2VA 自动路由与骨架、8 种 H3 风格、稳定说话人编号、cinematic、naturalistic 现实分镜、人物因果调度、九宫格、人工选择、edgePlans、入口帧和 24 道门。
 
 已在 Windows + Node 22.19.0 跑通全量自测；运行要求 Node ≥ 18。
